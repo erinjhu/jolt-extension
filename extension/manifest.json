@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Jolt Autofill",
+  "version": "0.1.0",
+  "description": "Reads the latest synced Jolt session from Google Drive and autofills the Jolt 'Add Manual Session' form.",
+  "minimum_chrome_version": "116",
+  "permissions": ["identity", "storage", "activeTab", "scripting"],
+  "oauth2": {
+    "client_id": "83061043011-j8klkl970f6vkuumibne8pof4ll391ag.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/drive.file",
+      "https://www.googleapis.com/auth/userinfo.email"
+    ]
+  },
+  "host_permissions": [
+    "https://writewithjolt.com/*",
+    "https://www.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Jolt Autofill",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://writewithjolt.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jolt Autofill</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --accent: #4f46e5;
+        --accent-hover: #4338ca;
+        --fg: #1f2937;
+        --muted: #6b7280;
+        --border: #e5e7eb;
+        --bg: #ffffff;
+        --ok: #047857;
+        --err: #b91c1c;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        width: 320px;
+        margin: 0;
+        padding: 16px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+        font-size: 14px;
+      }
+      h1 {
+        font-size: 15px;
+        margin: 0 0 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+      .card .title {
+        font-weight: 600;
+        margin: 0 0 4px;
+        word-break: break-word;
+      }
+      .card .meta {
+        color: var(--muted);
+        font-size: 12px;
+        margin: 0;
+      }
+      .empty {
+        color: var(--muted);
+        font-style: italic;
+      }
+      button {
+        width: 100%;
+        padding: 10px 12px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-bottom: 8px;
+        transition: background-color 0.15s ease;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .primary {
+        background: var(--accent);
+        color: #fff;
+      }
+      .primary:hover:not(:disabled) {
+        background: var(--accent-hover);
+      }
+      .secondary {
+        background: #f3f4f6;
+        color: var(--fg);
+      }
+      .secondary:hover:not(:disabled) {
+        background: #e5e7eb;
+      }
+      #status {
+        font-size: 12px;
+        min-height: 16px;
+        margin: 4px 0 0;
+      }
+      #status.ok {
+        color: var(--ok);
+      }
+      #status.err {
+        color: var(--err);
+      }
+      #status.info {
+        color: var(--muted);
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 999px;
+      }
+      .badge .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+      .badge.connected {
+        background: rgba(4, 120, 87, 0.12);
+        color: var(--ok);
+      }
+      .badge.connected .dot {
+        background: var(--ok);
+      }
+      .badge.disconnected {
+        background: #f3f4f6;
+        color: var(--muted);
+      }
+      .badge.disconnected .dot {
+        background: #9ca3af;
+      }
+      .auth-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .auth-row button {
+        width: auto;
+        margin: 0;
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+        margin: 0 0 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>⚡ Jolt Autofill</h1>
+
+    <div class="auth-row">
+      <span class="badge disconnected" id="auth-badge">
+        <span class="dot"></span>
+        <span id="auth-badge-text">Not Connected</span>
+      </span>
+      <button class="secondary" id="disconnect-btn" hidden>Disconnect</button>
+    </div>
+
+    <!-- Settings / Sign In view: shown while the user is unauthenticated. -->
+    <section id="signin-view" hidden>
+      <p class="hint">
+        Connect your Google account to sync sessions from Drive.
+      </p>
+      <button class="primary" id="signin-btn">Sign In with Google</button>
+    </section>
+
+    <!-- Main view: shown only after the user is connected. -->
+    <section id="main-view" hidden>
+      <section class="card" id="session-card">
+        <p class="empty" id="session-empty">No session synced yet.</p>
+        <p class="title" id="session-title" hidden></p>
+        <p class="meta" id="session-meta" hidden></p>
+      </section>
+
+      <button class="secondary" id="sync-btn">Sync from Drive</button>
+      <button class="primary" id="autofill-btn" disabled>Autofill Jolt Form</button>
+    </section>
+
+    <p id="status" class="info"></p>
+
+    <script type="module" src="./src/popup.ts"></script>
+  </body>
+</html>
