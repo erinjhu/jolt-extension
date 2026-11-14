@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import AuthStatusChip from './components/AuthStatusChip';
+import AppHeader from './components/AppHeader';
 import BottomNav, { type AppTab } from './components/BottomNav';
 import PhotoUploadLanding from './components/PhotoUploadLanding';
 import SessionForm from './components/SessionForm';
@@ -16,7 +16,12 @@ import {
 import { useGoogleAuth } from './hooks/useGoogleAuth';
 import { defaultSessionTitle } from './utils/sessionDefaults';
 import { silentRefresh } from './services/googleAuth';
-import { fetchDocumentText, type CreatedDoc } from './services/googleDocsService';
+import {
+  fetchDocumentText,
+  saveDocumentText,
+  type CreatedDoc,
+} from './services/googleDocsService';
+import type { WritingSessionMetrics } from './hooks/useWritingSession';
 import type { TargetDoc } from './services/joltDocumentsService';
 import type { JoltSessionPayload } from './types/session';
 
@@ -30,6 +35,9 @@ export default function App() {
   const [selectedDoc, setSelectedDoc] = useState<TargetDoc | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>('scan');
   const [transcription, setTranscription] = useState<TranscriptionResult | null>(null);
+  // When set, the user finished a TEXT EDITOR session: the logging screen
+  // opens seeded with the written text (no photo involved).
+  const [editorSessionText, setEditorSessionText] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
   const {
@@ -39,6 +47,7 @@ export default function App() {
     error: authError,
     signIn,
     signOut,
+    switchAccount,
     setUser: setGoogleUser,
   } = useGoogleAuth();
   const [isSyncing, setIsSyncing] = useState(false);
@@ -72,10 +81,9 @@ export default function App() {
     }
   }
 
-  /** A document was chosen on the landing screen; reveal the bottom nav. */
+  /** A document was chosen; open whichever tab is active in the bottom nav. */
   function handleSelectDoc(doc: TargetDoc) {
     setSelectedDoc(doc);
-    setActiveTab('scan');
   }
 
   /** "Change Doc" — drop the current target and return to selection. */
@@ -84,7 +92,7 @@ export default function App() {
     setImageBase64('');
     setTranscription(null);
     setTranscribeError(null);
-    setActiveTab('scan');
+    setEditorSessionText(null);
   }
 
   /**
@@ -98,6 +106,24 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [googleUser],
   );
+
+  /** Save editor text back to the Google Doc, token-retrying on a 401. */
+  const saveDocumentTextFn = useCallback(
+    (fileId: string, newText: string) =>
+      withTokenRetry((token) => saveDocumentText(token, fileId, newText)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [googleUser],
+  );
+
+  /**
+   * Finish a TEXT EDITOR session: the editor has already paused its timer and
+   * forced a final save, so we just move to the logging screen seeded with the
+   * written text. (Metrics stay available on the handed-off summary.)
+   */
+  function handleFinishSession(summary: { metrics: WritingSessionMetrics; text: string }) {
+    setEditorSessionText(summary.text);
+    setActiveTab('scan');
+  }
 
   async function handleImageSelected(dataUrl: string, doc: TargetDoc) {
     setImageBase64(dataUrl);
@@ -152,6 +178,7 @@ export default function App() {
     setSelectedDoc(null);
     setActiveTab('scan');
     setTranscription(null);
+    setEditorSessionText(null);
     setIsTranscribing(false);
     setTranscribeError(null);
     setSyncedDoc(null);
@@ -182,9 +209,10 @@ export default function App() {
 
   const isSynced = Boolean(syncedDoc);
   const hasImage = Boolean(imageBase64);
-  // The bottom nav lives once a target doc is chosen, and is hidden on the
-  // post-sync confirmation screen (which runs its own "add new session" flow).
-  const showBottomNav = isSignedIn && Boolean(selectedDoc) && !isSynced;
+  // The bottom nav is shown whenever signed in (including document selection),
+  // except on the post-sync confirmation screen, which runs its own
+  // "add new session" flow.
+  const showBottomNav = isSignedIn && !isSynced;
 
   // Strict auth gate. Nothing else renders until there is a valid session.
   if (isRestoring) {
@@ -198,7 +226,7 @@ export default function App() {
 
   /** The Scan Photo feature: landing / capture / review-and-sync form. */
   function renderScanTab() {
-    if (!hasImage) {
+    if (!hasImage && editorSessionText === null) {
       // Step 1: choose a target document, then capture/upload a photo.
       return (
         <PhotoUploadLanding
@@ -216,7 +244,7 @@ export default function App() {
       <>
         <SessionForm
           key={flowKey}
-          initialDescription={transcription?.text ?? ''}
+          initialDescription={editorSessionText ?? transcription?.text ?? ''}
           imageBase64={imageBase64}
           documentName={selectedDoc?.name ?? ''}
           onImageSelected={handleRetake}
@@ -246,31 +274,18 @@ export default function App() {
 
   return (
     <>
+      <AppHeader
+        user={googleUser}
+        isBusy={isAuthBusy}
+        error={authError}
+        onSignOut={() => void signOut()}
+        onSwitchAccount={switchAccount}
+      />
       <main
         className={`mx-auto flex min-h-full max-w-xl flex-col gap-6 px-4 py-6 ${
           showBottomNav ? 'pb-24' : ''
         }`}
       >
-        <header className="flex flex-col gap-1">
-          <div className="flex items-start justify-between gap-3">
-            <h1 className="text-xl font-bold text-white">Jolt Notes OCR</h1>
-            <div className="flex items-center gap-2">
-              <AuthStatusChip isSignedIn={isSignedIn} email={googleUser.email} />
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                disabled={isAuthBusy}
-                className="rounded-none border border-gray-600 px-2.5 py-1 text-xs font-medium text-gray-300 hover:text-white disabled:opacity-50"
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-          <p className="text-sm text-gray-400">
-            Snap a handwritten note, review the text, and prepare it for Jolt.
-          </p>
-        </header>
-
         {isSynced ? (
           <SyncConfirmation doc={syncedDoc} onAddNewSession={resetFlow} />
         ) : selectedDoc ? (
@@ -284,8 +299,10 @@ export default function App() {
               <TextEditor
                 doc={selectedDoc}
                 loadText={loadDocumentText}
+                saveText={saveDocumentTextFn}
                 isActive={activeTab === 'editor'}
                 onChangeDoc={handleClearDoc}
+                onFinish={handleFinishSession}
               />
             </div>
           </>

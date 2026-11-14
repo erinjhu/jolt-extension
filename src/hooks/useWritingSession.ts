@@ -60,6 +60,11 @@ export interface WritingSessionMetrics {
 export interface WritingSession extends WritingSessionMetrics {
   /** Report a text change from the editor (new full text + caret position). */
   recordChange: (nextText: string, caret: number) => void;
+  /**
+   * Permanently stop the active timer (session finished). All accumulated
+   * metrics stay in state untouched so the logging screen can read them.
+   */
+  finish: () => void;
 }
 
 /**
@@ -79,6 +84,7 @@ export function useWritingSession(
   const [draftingSeconds, setDraftingSeconds] = useState(0);
   const [editingSeconds, setEditingSeconds] = useState(0);
   const [highestWph, setHighestWph] = useState(0);
+  const [isFinished, setIsFinished] = useState(false);
 
   const sessionWords = Math.max(0, countWords(text) - initialWordCount);
 
@@ -86,6 +92,7 @@ export function useWritingSession(
   const lastEditAtRef = useRef(0);
   const activeRef = useRef(active);
   const hasStartedRef = useRef(false);
+  const finishedRef = useRef(false);
   // When > now, the session is in the post-deletion "editing" window.
   const editingUntilRef = useRef(0);
   // Previous text, to classify the next change as drafting vs. editing.
@@ -106,8 +113,18 @@ export function useWritingSession(
     }
   }, [text]);
 
+  const finish = useCallback(() => {
+    finishedRef.current = true;
+    setIsFinished(true);
+  }, []);
+
   const recordChange = useCallback(
     (nextText: string, caret: number) => {
+      // Session already finished: keep prev text in sync but don't resume.
+      if (finishedRef.current) {
+        prevTextRef.current = nextText;
+        return;
+      }
       const now = Date.now();
       const prev = prevTextRef.current;
 
@@ -146,11 +163,12 @@ export function useWritingSession(
   // 1-second tick: advance active time and the drafting/editing split, pausing
   // when the tab is inactive or the user has gone idle.
   useEffect(() => {
-    if (!hasStarted) return;
+    if (!hasStarted || isFinished) return;
     const id = window.setInterval(() => {
       const now = Date.now();
       const idle = now - lastEditAtRef.current > IDLE_TIMEOUT_MS;
-      if (!activeRef.current || idle) return;
+      // Finished sessions, inactive tabs, and idle gaps don't accrue time.
+      if (finishedRef.current || !activeRef.current || idle) return;
 
       setActiveSeconds((s) => s + 1);
       if (now < editingUntilRef.current) {
@@ -177,7 +195,7 @@ export function useWritingSession(
       }
     }, 1000);
     return () => window.clearInterval(id);
-  }, [hasStarted]);
+  }, [hasStarted, isFinished]);
 
   const trackedSeconds = draftingSeconds + editingSeconds;
   let draftingPct = 0;
@@ -203,5 +221,6 @@ export function useWritingSession(
     overallWph,
     highestWph,
     recordChange,
+    finish,
   };
 }
