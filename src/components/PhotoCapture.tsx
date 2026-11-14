@@ -2,8 +2,9 @@ import { useId, useState, type ChangeEvent } from 'react';
 import { isImageFile, readFileAsDataUrl } from '../utils/imageFile';
 
 /**
- * Captures a note photo from the mobile camera or a desktop file picker,
- * then reports the selected image to the parent as a base64 data URL.
+ * Photo capture/upload area for the PHOTOS section. Supports the mobile
+ * camera and desktop file picker, and shows a preview of the selected note.
+ * Styled to match Jolt's minimalist light form.
  */
 interface PhotoCaptureProps {
   /** Fires with the base64 data URL once an image is selected. */
@@ -19,17 +20,12 @@ export default function PhotoCapture({ onImageSelected, disabled = false }: Phot
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
+    if (!file) return;
     if (!isImageFile(file)) {
       setErrorMessage('Please choose an image file.');
       return;
     }
-
     setErrorMessage(null);
-
     try {
       const dataUrl = await readFileAsDataUrl(file);
       setPreviewUrl(dataUrl);
@@ -40,13 +36,13 @@ export default function PhotoCapture({ onImageSelected, disabled = false }: Phot
   }
 
   return (
-    <section className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
       <label
         htmlFor={inputId}
-        className="flex cursor-pointer items-center justify-center rounded-xl border-2 border-dashed border-gray-600 bg-gray-800 px-4 py-6 text-center text-sm font-medium text-gray-300 transition hover:border-indigo-400 hover:text-indigo-300 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+        className="flex cursor-pointer items-center justify-center border border-dashed border-gray-300 bg-white px-4 py-6 text-center font-mono text-sm text-gray-500 transition hover:border-black hover:text-black aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
         aria-disabled={disabled}
       >
-        {previewUrl ? 'Retake or choose another photo' : 'Take a photo or upload a note'}
+        {previewUrl ? 'Retake or choose another photo' : 'Snap or upload your handwritten page'}
       </label>
 
       <input
@@ -59,15 +55,15 @@ export default function PhotoCapture({ onImageSelected, disabled = false }: Phot
         className="sr-only"
       />
 
-      {errorMessage && <p className="text-sm text-red-400">{errorMessage}</p>}
+      {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
 
       {previewUrl && (
         <img
           src={previewUrl}
           alt="Selected note preview"
-          className="w-full rounded-xl border border-gray-700 object-contain"
+          className="w-full border border-gray-300 object-contain"
         />
       )}
-    </section>
+    </div>
   );
 }

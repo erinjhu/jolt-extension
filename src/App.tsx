@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import AppHeader from './components/AppHeader';
-import BottomNav, { type AppTab } from './components/BottomNav';
+import type { AppTab } from './components/ModeToggle';
 import PhotoUploadLanding from './components/PhotoUploadLanding';
 import SessionForm from './components/SessionForm';
 import SignInScreen from './components/SignInScreen';
@@ -209,10 +209,6 @@ export default function App() {
 
   const isSynced = Boolean(syncedDoc);
   const hasImage = Boolean(imageBase64);
-  // The bottom nav is shown whenever signed in (including document selection),
-  // except on the post-sync confirmation screen, which runs its own
-  // "add new session" flow.
-  const showBottomNav = isSignedIn && !isSynced;
 
   // Strict auth gate. Nothing else renders until there is a valid session.
   if (isRestoring) {
@@ -275,17 +271,15 @@ export default function App() {
   return (
     <>
       <AppHeader
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
         user={googleUser}
         isBusy={isAuthBusy}
         error={authError}
         onSignOut={() => void signOut()}
         onSwitchAccount={switchAccount}
       />
-      <main
-        className={`mx-auto flex min-h-full max-w-xl flex-col gap-6 px-4 py-6 ${
-          showBottomNav ? 'pb-24' : ''
-        }`}
-      >
+      <main className="mx-auto flex min-h-full max-w-xl flex-col gap-6 px-4 py-6">
         {isSynced ? (
           <SyncConfirmation doc={syncedDoc} onAddNewSession={resetFlow} />
         ) : selectedDoc ? (
@@ -311,8 +305,6 @@ export default function App() {
           renderScanTab()
         )}
       </main>
-
-      {showBottomNav && <BottomNav active={activeTab} onChange={setActiveTab} />}
     </>
   );
 }

@@ -28,7 +28,7 @@ export const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
 ].join(' ');
 
-const USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
+const USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
 
 export interface GoogleUser {
   accessToken: string;
@@ -118,6 +118,17 @@ async function completeSignIn(response: GisTokenResponse): Promise<GoogleUser> {
 /** Interactive sign-in: show the consent UI, then persist the session. */
 export async function signIn(): Promise<GoogleUser> {
   const response = await requestToken('consent');
+  return completeSignIn(response);
+}
+
+/**
+ * Show Google's account chooser so the user can pick a different account,
+ * then persist the new session over the old one. The previous token is
+ * deliberately NOT revoked: revoking an access token can revoke the whole
+ * grant, which would invalidate the new token if the same account is chosen.
+ */
+export async function switchAccount(): Promise<GoogleUser> {
+  const response = await requestToken('select_account');
   return completeSignIn(response);
 }
 

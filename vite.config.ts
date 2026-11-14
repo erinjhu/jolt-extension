@@ -7,7 +7,11 @@ export default defineConfig({
   plugins: [react()],
   base: process.env.VITE_BASE ?? '/jolt-extension/',
   server: {
-    // Allow the Cloudflare quick-tunnel host used for mobile device testing.
-    allowedHosts: ['turned-besides-toolbar-bios.trycloudflare.com'],
+    // Listen on all interfaces so the Cloudflare tunnel can reach the dev
+    // server, and accept any *.trycloudflare.com quick-tunnel host (the
+    // subdomain changes on every run). allowedHosts entries are bare
+    // hostnames — no scheme, no https:// prefix.
+    host: true,
+    allowedHosts: ['.trycloudflare.com'],
   },
 });

@@ -26,8 +26,14 @@ export interface JoltSessionPayload {
   id: string;
   /** Short session title shown in Jolt. */
   title: string;
-  /** Longer free-form notes / OCR body text. */
+  /** The user's manual notes typed into the Description field (may be empty). */
   description: string;
+  /**
+   * OCR-transcribed text from the captured photo. Written into the generated
+   * Google Doc body; kept separate from `description` so the editable
+   * Description field can stay blank for the user.
+   */
+  ocrText: string;
   /** A memorable quote captured during the session. */
   quote: string;
   /** Calendar date of the session as a `YYYY-MM-DD` string. */

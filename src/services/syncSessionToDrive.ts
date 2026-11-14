@@ -22,9 +22,18 @@ function resolveDocName(payload: JoltSessionPayload): string {
   return title || timestampedName(new Date());
 }
 
-/** Compose the document body from the editable session fields. */
+/**
+ * Compose the Google Doc body. The OCR-transcribed text is the primary body
+ * (it is deliberately NOT placed in the editable Description field). If the
+ * user also typed manual notes, append them, followed by any quote.
+ */
 function composeDocBody(payload: JoltSessionPayload): string {
-  const lines = [payload.description.trim()];
+  const lines: string[] = [];
+  if (payload.ocrText.trim()) lines.push(payload.ocrText.trim());
+  if (payload.description.trim()) {
+    if (lines.length) lines.push('');
+    lines.push(payload.description.trim());
+  }
   if (payload.quote.trim()) {
     lines.push('', `Quote: ${payload.quote.trim()}`);
   }
