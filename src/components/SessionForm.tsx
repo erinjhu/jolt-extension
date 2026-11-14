@@ -7,6 +7,7 @@ import {
   toDateInputValue,
   toTimeInputValue,
 } from '../utils/sessionDefaults';
+import type { WritingSessionMetrics } from '../hooks/useWritingSession';
 import { JOLT_DOCUMENTS } from '../data/documents';
 import type { TranscriptionSource } from '../services/transcription';
 import PhotoCapture from './PhotoCapture';
@@ -27,6 +28,12 @@ interface SessionFormProps {
   imageBase64: string;
   /** Pre-selected target document name (chosen on the landing screen). */
   documentName?: string;
+  /**
+   * Tracked analytics from a finished TEXT EDITOR session. When provided, the
+   * form seeds Words / Start Time / Duration from these values and shows a
+   * read-only WRITING MODES / FLOW summary. Absent for photo-scan sessions.
+   */
+  sessionMetrics?: WritingSessionMetrics | null;
   /** Fires when a photo is captured/uploaded in the PHOTOS section. */
   onImageSelected: (imageBase64: string) => void;
   /** Invoked with the assembled payload on submit. */
@@ -46,6 +53,7 @@ export default function SessionForm({
   initialDescription,
   imageBase64,
   documentName = '',
+  sessionMetrics = null,
   onImageSelected,
   onSyncToDrive,
   disabled = false,
@@ -59,9 +67,26 @@ export default function SessionForm({
   onOfflineFallback,
 }: SessionFormProps) {
   const now = useMemo(() => new Date(), []);
+  // A finished editor session's start time anchors Date / Start Time; fall
+  // back to "now" for photo-scan sessions with no tracked start.
+  const startDate = useMemo(
+    () =>
+      sessionMetrics?.sessionStartTimestamp != null
+        ? new Date(sessionMetrics.sessionStartTimestamp)
+        : now,
+    [sessionMetrics?.sessionStartTimestamp, now],
+  );
+  // Active seconds split into whole hours + rounded minutes for the Duration
+  // inputs (defaults to the usual 0h 15m when there are no tracked metrics).
+  const trackedDuration = useMemo(() => {
+    const secs = sessionMetrics?.activeSeconds ?? 0;
+    if (!sessionMetrics || secs <= 0) return { hours: 0, minutes: 15 };
+    return { hours: Math.floor(secs / 3600), minutes: Math.round((secs % 3600) / 60) };
+  }, [sessionMetrics]);
+
   const [title, setTitle] = useState(() => defaultSessionTitle(now));
-  const [date, setDate] = useState(() => toDateInputValue(now));
-  const [startTime, setStartTime] = useState(() => toTimeInputValue(now));
+  const [date, setDate] = useState(() => toDateInputValue(startDate));
+  const [startTime, setStartTime] = useState(() => toTimeInputValue(startDate));
   const [targetDocumentName, setTargetDocumentName] = useState(
     documentName || JOLT_DOCUMENTS[0] || '',
   );
@@ -78,15 +103,20 @@ export default function SessionForm({
   // not into this editable field. The user types notes here only if they want.
   const [description, setDescription] = useState('');
   const [quote, setQuote] = useState('');
-  const [wordCount, setWordCount] = useState(() => countWords(initialDescription));
-  const [durationHours, setDurationHours] = useState(0);
-  const [durationMinutes, setDurationMinutes] = useState(15);
+  // Words seed: tracked net words from the editor session when present,
+  // otherwise the transcribed OCR text's word count.
+  const [wordCount, setWordCount] = useState(() =>
+    sessionMetrics ? sessionMetrics.sessionWords : countWords(initialDescription),
+  );
+  const [durationHours, setDurationHours] = useState(trackedDuration.hours);
+  const [durationMinutes, setDurationMinutes] = useState(trackedDuration.minutes);
 
-  // The WORDS stat is still auto-calculated from the transcribed text, which
-  // arrives after mount (async OCR). It does not touch the Description field.
+  // For photo-scan sessions the WORDS stat is auto-calculated from the
+  // transcribed text, which arrives after mount (async OCR). Editor sessions
+  // keep their tracked word count untouched.
   useEffect(() => {
-    setWordCount(countWords(initialDescription));
-  }, [initialDescription]);
+    if (!sessionMetrics) setWordCount(countWords(initialDescription));
+  }, [initialDescription, sessionMetrics]);
 
   function selectAll(event: FocusEvent<HTMLInputElement>) {
     event.target.select();
@@ -180,6 +210,29 @@ export default function SessionForm({
           onMinutesChange={setDurationMinutes}
         />
       </div>
+
+      {sessionMetrics && (
+        <div className="flex flex-col gap-3">
+          <JoltSectionHeader>Writing Modes</JoltSectionHeader>
+          <div className="flex h-2 w-full overflow-hidden border border-gray-300" aria-hidden>
+            <div className="h-full bg-black" style={{ width: `${sessionMetrics.draftingPct}%` }} />
+            <div
+              className="h-full bg-gray-400"
+              style={{ width: `${sessionMetrics.editingPct}%` }}
+            />
+          </div>
+          <div className="flex justify-between font-mono text-xs text-gray-600">
+            <span>Drafting {sessionMetrics.draftingPct}%</span>
+            <span>Editing {sessionMetrics.editingPct}%</span>
+          </div>
+
+          <JoltSectionHeader>Flow</JoltSectionHeader>
+          <div className="flex justify-between font-mono text-xs text-gray-600">
+            <span>Overall {sessionMetrics.overallWph} wph</span>
+            <span>Highest {sessionMetrics.highestWph} wph</span>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 border-b border-gray-200 pb-6">
         <JoltSectionHeader>Visibility</JoltSectionHeader>

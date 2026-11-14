@@ -35,9 +35,13 @@ export default function App() {
   const [selectedDoc, setSelectedDoc] = useState<TargetDoc | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>('scan');
   const [transcription, setTranscription] = useState<TranscriptionResult | null>(null);
-  // When set, the user finished a TEXT EDITOR session: the logging screen
-  // opens seeded with the written text (no photo involved).
-  const [editorSessionText, setEditorSessionText] = useState<string | null>(null);
+  // When set, the user finished a TEXT EDITOR session: the ADD MANUAL SESSION
+  // form opens inside the EDITOR view, seeded with the written text and the
+  // tracked writing analytics (no photo involved, EDITOR stays highlighted).
+  const [editorSession, setEditorSession] = useState<{
+    text: string;
+    metrics: WritingSessionMetrics;
+  } | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
   const {
@@ -92,7 +96,7 @@ export default function App() {
     setImageBase64('');
     setTranscription(null);
     setTranscribeError(null);
-    setEditorSessionText(null);
+    setEditorSession(null);
   }
 
   /**
@@ -117,12 +121,12 @@ export default function App() {
 
   /**
    * Finish a TEXT EDITOR session: the editor has already paused its timer and
-   * forced a final save, so we just move to the logging screen seeded with the
-   * written text. (Metrics stay available on the handed-off summary.)
+   * forced a final save. Swap the editor view for the ADD MANUAL SESSION form
+   * (seeded with the written text + tracked analytics) WITHOUT changing the
+   * active mode, so the header toggle stays on EDITOR.
    */
   function handleFinishSession(summary: { metrics: WritingSessionMetrics; text: string }) {
-    setEditorSessionText(summary.text);
-    setActiveTab('scan');
+    setEditorSession({ text: summary.text, metrics: summary.metrics });
   }
 
   async function handleImageSelected(dataUrl: string, doc: TargetDoc) {
@@ -178,7 +182,7 @@ export default function App() {
     setSelectedDoc(null);
     setActiveTab('scan');
     setTranscription(null);
-    setEditorSessionText(null);
+    setEditorSession(null);
     setIsTranscribing(false);
     setTranscribeError(null);
     setSyncedDoc(null);
@@ -222,7 +226,7 @@ export default function App() {
 
   /** The Scan Photo feature: landing / capture / review-and-sync form. */
   function renderScanTab() {
-    if (!hasImage && editorSessionText === null) {
+    if (!hasImage) {
       // Step 1: choose a target document, then capture/upload a photo.
       return (
         <PhotoUploadLanding
@@ -240,7 +244,7 @@ export default function App() {
       <>
         <SessionForm
           key={flowKey}
-          initialDescription={editorSessionText ?? transcription?.text ?? ''}
+          initialDescription={transcription?.text ?? ''}
           imageBase64={imageBase64}
           documentName={selectedDoc?.name ?? ''}
           onImageSelected={handleRetake}
@@ -268,6 +272,38 @@ export default function App() {
     );
   }
 
+  /**
+   * EDITOR view after FINISH SESSION: the ADD MANUAL SESSION form seeded with
+   * the written text and tracked analytics. Rendered in place of TextEditor
+   * while `editorSession` is set, so the header toggle stays on EDITOR.
+   */
+  function renderEditorFinishedForm() {
+    if (!editorSession) return null;
+    return (
+      <>
+        <SessionForm
+          key={flowKey}
+          initialDescription={editorSession.text}
+          imageBase64=""
+          documentName={selectedDoc?.name ?? ''}
+          sessionMetrics={editorSession.metrics}
+          onImageSelected={handleRetake}
+          onSyncToDrive={handleSyncToDrive}
+          disabled={isSyncing}
+          isSignedIn={isSignedIn}
+          isSyncing={isSyncing}
+        />
+
+        {isSyncing && (
+          <p className="text-sm text-indigo-300" aria-live="polite">
+            Creating your Google Doc in Drive…
+          </p>
+        )}
+        {syncError && <SyncResultBanner doc={null} error={syncError} />}
+      </>
+    );
+  }
+
   return (
     <>
       <AppHeader
@@ -290,14 +326,20 @@ export default function App() {
               {renderScanTab()}
             </div>
             <div className={activeTab === 'editor' ? 'contents' : 'hidden'}>
-              <TextEditor
-                doc={selectedDoc}
-                loadText={loadDocumentText}
-                saveText={saveDocumentTextFn}
-                isActive={activeTab === 'editor'}
-                onChangeDoc={handleClearDoc}
-                onFinish={handleFinishSession}
-              />
+              {editorSession ? (
+                // Finished session: the editor already forced its final save
+                // before handing off, so swap it for the logging form here.
+                renderEditorFinishedForm()
+              ) : (
+                <TextEditor
+                  doc={selectedDoc}
+                  loadText={loadDocumentText}
+                  saveText={saveDocumentTextFn}
+                  isActive={activeTab === 'editor'}
+                  onChangeDoc={handleClearDoc}
+                  onFinish={handleFinishSession}
+                />
+              )}
             </div>
           </>
         ) : (
