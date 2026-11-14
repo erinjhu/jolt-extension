@@ -35,25 +35,74 @@
         align-items: center;
         gap: 8px;
       }
-      .card {
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 12px;
-        margin-bottom: 12px;
-      }
-      .card .title {
-        font-weight: 600;
-        margin: 0 0 4px;
-        word-break: break-word;
-      }
-      .card .meta {
-        color: var(--muted);
-        font-size: 12px;
-        margin: 0;
-      }
       .empty {
         color: var(--muted);
         font-style: italic;
+        padding: 12px 0;
+      }
+      .session-list {
+        list-style: none;
+        margin: 0 0 12px;
+        padding: 0;
+        max-height: 320px;
+        overflow-y: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      .session-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .session-row:last-child {
+        border-bottom: none;
+      }
+      .session-info {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .session-info .title {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .session-info .meta {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .session-action {
+        flex: none;
+      }
+      .session-action button {
+        width: auto;
+        margin: 0;
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+      .synced-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: rgba(4, 120, 87, 0.12);
+        color: var(--ok);
+        border: none;
+        cursor: pointer;
+      }
+      .synced-badge .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--ok);
       }
       button {
         width: 100%;
@@ -167,14 +216,12 @@
 
     <!-- Main view: shown only after the user is connected. -->
     <section id="main-view" hidden>
-      <section class="card" id="session-card">
-        <p class="empty" id="session-empty">No session synced yet.</p>
-        <p class="title" id="session-title" hidden></p>
-        <p class="meta" id="session-meta" hidden></p>
-      </section>
+      <button class="secondary" id="sync-btn">Fetch Sessions</button>
 
-      <button class="secondary" id="sync-btn">Sync from Drive</button>
-      <button class="primary" id="autofill-btn" disabled>Autofill Jolt Form</button>
+      <p class="empty" id="session-empty" hidden>
+        No sessions yet. Click “Fetch Sessions” to load them.
+      </p>
+      <ul class="session-list" id="session-list" hidden></ul>
     </section>
 
     <p id="status" class="info"></p>

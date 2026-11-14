@@ -6,11 +6,18 @@
 
 export interface GisTokenResponse {
   access_token: string;
+  /** Token lifetime in seconds (typically 3600). */
   expires_in: number;
   scope: string;
   token_type: string;
   error?: string;
   error_description?: string;
+}
+
+/** Overrides accepted by `requestAccessToken`. An empty prompt attempts a
+ *  silent grant (no consent UI) when a valid session already exists. */
+export interface GisTokenRequestOverrides {
+  prompt?: '' | 'none' | 'consent' | 'select_account';
 }
 
 export interface GisTokenClientConfig {
@@ -21,7 +28,7 @@ export interface GisTokenClientConfig {
 }
 
 export interface GisTokenClient {
-  requestAccessToken: (overrides?: { prompt?: string }) => void;
+  requestAccessToken: (overrides?: GisTokenRequestOverrides) => void;
 }
 
 interface GoogleOauth2 {

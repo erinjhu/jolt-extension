@@ -1,26 +1,40 @@
 /**
- * Google Identity Services (GIS) OAuth for the web app. Requests ONLY the
- * `drive.file` and `userinfo.email` scopes, exchanges the access token for the
- * signed-in user's email, and exposes sign-in / sign-out helpers.
+ * Google Identity Services (GIS) OAuth for the web app. Requests the
+ * `drive.file`, `userinfo.email`, and `userinfo.profile` scopes, exchanges the
+ * access token for the signed-in user's profile, and persists the session in
+ * localStorage so a reload keeps the user signed in.
  *
  * All token handling stays in the browser; nothing is sent to our own server.
  */
 
-import type { GisTokenClient, GisTokenResponse } from './googleIdentity';
+import type {
+  GisTokenClient,
+  GisTokenRequestOverrides,
+  GisTokenResponse,
+} from './googleIdentity';
 import { resolveClientId } from './clientIdStore';
+import {
+  clearSession,
+  isSessionValid,
+  readSession,
+  saveSession,
+  type GoogleProfile,
+} from './authStorage';
 
-/** The only OAuth scopes this app ever requests. */
+/** The OAuth scopes this app requests. */
 export const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
 ].join(' ');
 
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
 export interface GoogleUser {
-  /** The signed-in account email, or null if the profile lookup failed. */
-  email: string | null;
   accessToken: string;
+  email: string | null;
+  name: string | null;
+  picture: string | null;
 }
 
 /** True once the GIS script has loaded and exposed `google.accounts.oauth2`. */
@@ -29,29 +43,33 @@ export function isGisReady(): boolean {
 }
 
 /**
- * Best-effort fetch of the signed-in user's email. Returns null instead of
- * throwing when the profile can't be read, so a granted token still counts
- * as a successful sign-in even if the display email is unavailable.
+ * Best-effort fetch of the signed-in user's profile. Returns empty fields
+ * instead of throwing, so a granted token still counts as a successful
+ * sign-in even if the profile lookup is unavailable.
  */
-async function fetchUserEmail(accessToken: string): Promise<string | null> {
+async function fetchProfile(accessToken: string): Promise<GoogleProfile> {
   try {
     const res = await fetch(USERINFO_URL, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { email?: string };
-    return body.email ?? null;
+    if (!res.ok) return { email: null, name: null, picture: null };
+    const body = (await res.json()) as { email?: string; name?: string; picture?: string };
+    return {
+      email: body.email ?? null,
+      name: body.name ?? null,
+      picture: body.picture ?? null,
+    };
   } catch {
-    return null;
+    return { email: null, name: null, picture: null };
   }
 }
 
 /**
- * Launch the Google consent flow and resolve with the user's email + token.
- * Rejects when GIS is unavailable, no client ID is configured, or the user
- * dismisses or denies the consent screen.
+ * Acquire an access token via GIS. `prompt: 'consent'` forces the consent UI
+ * (first interactive sign-in); `prompt: ''` attempts a silent grant that only
+ * succeeds when the user already has an active Google session + prior grant.
  */
-export function signIn(): Promise<GoogleUser> {
+function requestToken(prompt: GisTokenRequestOverrides['prompt']): Promise<GisTokenResponse> {
   return new Promise((resolve, reject) => {
     const oauth2 = window.google?.accounts?.oauth2;
     if (!oauth2) {
@@ -69,33 +87,83 @@ export function signIn(): Promise<GoogleUser> {
       client_id: clientId,
       scope: OAUTH_SCOPES,
       callback: (response: GisTokenResponse) => {
-        console.debug('[googleAuth] token callback', {
-          hasToken: Boolean(response.access_token),
-          error: response.error,
-          scope: response.scope,
-        });
         if (response.error || !response.access_token) {
           reject(new Error(response.error_description ?? response.error ?? 'Sign-in failed.'));
           return;
         }
-        void fetchUserEmail(response.access_token).then((email) => {
-          console.debug('[googleAuth] signed in; email =', email);
-          resolve({ email, accessToken: response.access_token });
-        });
+        resolve(response);
       },
       error_callback: (error) => {
-        console.error('[googleAuth] error_callback', error);
-        reject(new Error(error.message ?? 'Sign-in was cancelled.'));
+        // `interaction_required` means the silent path needs the user; the
+        // caller decides whether to fall back to an interactive prompt.
+        reject(new Error(error.type ?? error.message ?? 'Sign-in was cancelled.'));
       },
     });
 
-    client.requestAccessToken({ prompt: 'consent' });
+    client.requestAccessToken(prompt === undefined ? undefined : { prompt });
   });
 }
 
-/** Revoke the access token so the next sign-in starts fresh. */
+/** Exchange a token response for a GoogleUser and persist the session. */
+async function completeSignIn(response: GisTokenResponse): Promise<GoogleUser> {
+  const profile = await fetchProfile(response.access_token);
+  saveSession({
+    accessToken: response.access_token,
+    expiresAt: Date.now() + response.expires_in * 1000,
+    profile,
+  });
+  return { accessToken: response.access_token, ...profile };
+}
+
+/** Interactive sign-in: show the consent UI, then persist the session. */
+export async function signIn(): Promise<GoogleUser> {
+  const response = await requestToken('consent');
+  return completeSignIn(response);
+}
+
+/**
+ * Attempt a silent token refresh (no consent UI). Resolves with a fresh
+ * GoogleUser when GIS can renew the grant, or rejects with
+ * `interaction_required` when the user must sign in interactively.
+ */
+export async function silentRefresh(): Promise<GoogleUser> {
+  const response = await requestToken('');
+  return completeSignIn(response);
+}
+
+/** True when a persisted session exists (valid or expired), for restore retries. */
+export function hasStoredSession(): boolean {
+  return readSession() !== null;
+}
+
+/**
+ * Restore the signed-in user on app mount / reload:
+ *   1. If a stored token is still valid (with a 60s buffer), use it as-is.
+ *   2. If it's expired, attempt a silent refresh.
+ *   3. Otherwise return null so the UI shows the sign-in button.
+ *
+ * localStorage is only cleared on explicit sign-out or when a silent refresh
+ * fails — never merely because a token expired.
+ */
+export async function restoreSession(): Promise<GoogleUser | null> {
+  const stored = readSession();
+  if (isSessionValid(stored)) {
+    return { accessToken: stored.accessToken, ...stored.profile };
+  }
+  if (!stored) return null;
+
+  // Stored but expired: try a silent refresh before giving up.
+  try {
+    return await silentRefresh();
+  } catch {
+    return null;
+  }
+}
+
+/** Revoke the token, clear the persisted session, and forget the user. */
 export function signOut(accessToken: string): Promise<void> {
   return new Promise((resolve) => {
+    clearSession();
     const oauth2 = window.google?.accounts?.oauth2;
     if (!oauth2 || !accessToken) {
       resolve();

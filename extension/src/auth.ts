@@ -74,6 +74,39 @@ export interface AuthSession {
  */
 const AUTH_FLAG_KEY = 'joltAuthConnected';
 const AUTH_EMAIL_KEY = 'joltAuthEmail';
+const AUTH_TOKEN_KEY = 'joltAuthToken';
+const AUTH_TOKEN_EXPIRY_KEY = 'joltAuthTokenExpiry';
+
+/** Assume a Google OAuth token is good for ~1 hour; refresh a bit early. */
+const TOKEN_TTL_MS = 55 * 60 * 1000;
+
+interface StoredToken {
+  token: string;
+  /** Epoch-ms time after which the token should be treated as expired. */
+  expiresAt: number;
+}
+
+/** Persist a freshly acquired token with a conservative expiry. */
+async function storeToken(token: string): Promise<void> {
+  await chrome.storage.local.set({
+    [AUTH_TOKEN_KEY]: token,
+    [AUTH_TOKEN_EXPIRY_KEY]: Date.now() + TOKEN_TTL_MS,
+  });
+}
+
+/** Read the stored token and its expiry, if present. */
+async function readStoredToken(): Promise<StoredToken | null> {
+  const stored = await chrome.storage.local.get([AUTH_TOKEN_KEY, AUTH_TOKEN_EXPIRY_KEY]);
+  const token = stored[AUTH_TOKEN_KEY] as string | undefined;
+  const expiresAt = stored[AUTH_TOKEN_EXPIRY_KEY] as number | undefined;
+  if (!token || typeof expiresAt !== 'number') return null;
+  return { token, expiresAt };
+}
+
+/** Forget the stored token (e.g. after a 401 or on disconnect). */
+async function clearStoredToken(): Promise<void> {
+  await chrome.storage.local.remove([AUTH_TOKEN_KEY, AUTH_TOKEN_EXPIRY_KEY]);
+}
 
 /** Persist the "connected" flag and last-known email. */
 async function rememberAuth(email: string | null): Promise<void> {
@@ -103,9 +136,46 @@ async function readAuthHint(): Promise<{ connected: boolean; email: string | nul
  */
 export async function signIn(): Promise<AuthSession> {
   const token = await getAuthToken(true);
+  await storeToken(token);
   const email = await fetchUserEmail(token);
   await rememberAuth(email);
   return { email, token };
+}
+
+/**
+ * Return a usable access token WITHOUT prompting the user when avoidable.
+ * Resolution order:
+ *   1. A non-expired token we stored ourselves (survives SW restarts).
+ *   2. A silent `getAuthToken(false)` — Chrome renews from an existing grant.
+ *   3. (only as a last resort) an interactive prompt.
+ *
+ * This is the single entry point network code should use, so a user who has
+ * signed in once is not asked to sign in again for routine actions.
+ */
+export async function getValidToken(): Promise<string> {
+  const stored = await readStoredToken();
+  if (stored && stored.expiresAt > Date.now()) {
+    return stored.token;
+  }
+
+  try {
+    const token = await getAuthToken(false);
+    await storeToken(token);
+    return token;
+  } catch {
+    const token = await getAuthToken(true);
+    await storeToken(token);
+    return token;
+  }
+}
+
+/**
+ * Invalidate a token that a Google API just rejected (401): drop it from both
+ * Chrome's cache and our own store so the next `getValidToken` re-acquires.
+ */
+export async function invalidateToken(token: string): Promise<void> {
+  await removeCachedToken(token);
+  await clearStoredToken();
 }
 
 /**
@@ -121,6 +191,7 @@ export async function signIn(): Promise<AuthSession> {
 export async function getSignedInSession(): Promise<AuthSession | null> {
   try {
     const token = await getAuthToken(false);
+    await storeToken(token);
     const email = await fetchUserEmail(token);
     await rememberAuth(email);
     return { token, email };
@@ -141,6 +212,7 @@ export async function disconnect(): Promise<void> {
   } catch {
     // No cached token to remove — already disconnected.
   } finally {
+    await clearStoredToken();
     await forgetAuth();
   }
 }

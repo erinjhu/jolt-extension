@@ -22,6 +22,8 @@ export type SessionVisibility = 'public' | 'private';
  * All fields are required so downstream consumers never have to guess.
  */
 export interface JoltSessionPayload {
+  /** Stable unique id for this session (used for dedupe + sync tracking). */
+  id: string;
   /** Short session title shown in Jolt. */
   title: string;
   /** Longer free-form notes / OCR body text. */

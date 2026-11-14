@@ -1,22 +1,24 @@
 /**
  * Google Drive integration: locate the `JoltSync` folder, read
- * `latest_jolt_session.json`, validate it, and cache it in
- * `chrome.storage.local`.
+ * `jolt_sessions.json`, validate every session, and cache the newest-first
+ * list in `chrome.storage.local`.
  *
  * All requests hit `https://www.googleapis.com/*`, which is the only Google
  * host the manifest is permitted to reach.
  */
 
-import { getAuthToken, removeCachedToken } from './auth';
+import { getValidToken, invalidateToken } from './auth';
 import {
-  CachedSession,
+  CachedSessions,
   JoltSessionPayload,
-  STORAGE_KEY,
+  SessionSummary,
+  SESSIONS_KEY,
+  SYNCED_IDS_KEY,
 } from './types';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const SYNC_FOLDER_NAME = 'JoltSync';
-const SESSION_FILE_NAME = 'latest_jolt_session.json';
+const SESSIONS_FILE_NAME = 'jolt_sessions.json';
 
 /** Escape a value for safe interpolation into a Drive `q` query string. */
 function escapeDriveQuery(value: string): string {
@@ -41,7 +43,9 @@ async function driveFetch(
   });
 
   if (res.status === 401 && retryWith) {
-    await removeCachedToken(token);
+    // The token Google rejected is stale/revoked — drop it everywhere, then
+    // retry once with a freshly resolved token.
+    await invalidateToken(token);
     const freshToken = await retryWith();
     return fetch(`${DRIVE_API}${path}`, {
       headers: { Authorization: `Bearer ${freshToken}` },
@@ -49,18 +53,6 @@ async function driveFetch(
   }
 
   return res;
-}
-
-/**
- * Mint a fresh token after a 401 (the cached one expired or was revoked).
- * Prefer a silent refresh; escalate to interactive only if that fails.
- */
-async function refreshToken(): Promise<string> {
-  try {
-    return await getAuthToken(false);
-  } catch {
-    return getAuthToken(true);
-  }
 }
 
 /** Find the id of the first non-trashed `JoltSync` folder owned by the user. */
@@ -78,7 +70,7 @@ async function findSyncFolderId(token: string): Promise<string> {
     pageSize: '1',
   });
 
-  const res = await driveFetch(`/files?${params.toString()}`, token, refreshToken);
+  const res = await driveFetch(`/files?${params.toString()}`, token, getValidToken);
   if (!res.ok) {
     throw new Error(`Drive folder lookup failed (HTTP ${res.status}).`);
   }
@@ -93,13 +85,13 @@ async function findSyncFolderId(token: string): Promise<string> {
   return folder.id;
 }
 
-/** Find the id of `latest_jolt_session.json` within the given folder. */
-async function findSessionFileId(
+/** Find the id of `jolt_sessions.json` within the given folder. */
+async function findSessionsFileId(
   folderId: string,
   token: string,
 ): Promise<string> {
   const q = [
-    `name = '${escapeDriveQuery(SESSION_FILE_NAME)}'`,
+    `name = '${escapeDriveQuery(SESSIONS_FILE_NAME)}'`,
     `'${escapeDriveQuery(folderId)}' in parents`,
     'trashed = false',
   ].join(' and ');
@@ -112,7 +104,7 @@ async function findSessionFileId(
     orderBy: 'modifiedTime desc',
   });
 
-  const res = await driveFetch(`/files?${params.toString()}`, token, refreshToken);
+  const res = await driveFetch(`/files?${params.toString()}`, token, getValidToken);
   if (!res.ok) {
     throw new Error(`Drive file lookup failed (HTTP ${res.status}).`);
   }
@@ -121,7 +113,7 @@ async function findSessionFileId(
   const file = body.files?.[0];
   if (!file) {
     throw new Error(
-      `"${SESSION_FILE_NAME}" was not found inside the "${SYNC_FOLDER_NAME}" folder.`,
+      `"${SESSIONS_FILE_NAME}" was not found inside the "${SYNC_FOLDER_NAME}" folder.`,
     );
   }
   return file.id;
@@ -136,7 +128,7 @@ async function downloadSessionFile(
   const res = await driveFetch(
     `/files/${encodeURIComponent(fileId)}?${params.toString()}`,
     token,
-    refreshToken,
+    getValidToken,
   );
   if (!res.ok) {
     throw new Error(`Failed to download session file (HTTP ${res.status}).`);
@@ -181,7 +173,15 @@ function validatePayload(raw: unknown): JoltSessionPayload {
     return typeof v === 'number' && Number.isFinite(v) ? v : 0;
   };
 
+  // `id` is required going forward, but tolerate legacy files by deriving a
+  // stable fallback from createdAt so older sessions still list and sync.
+  const id =
+    typeof o.id === 'string' && o.id
+      ? o.id
+      : `legacy-${typeof o.createdAt === 'string' ? o.createdAt : String(Date.now())}`;
+
   return {
+    id,
     title: str('title'),
     description: str('description'),
     quote: optionalStr('quote'),
@@ -198,37 +198,93 @@ function validatePayload(raw: unknown): JoltSessionPayload {
   };
 }
 
-/** Persist the validated payload in `chrome.storage.local`. */
-async function cacheSession(
-  payload: JoltSessionPayload,
-): Promise<CachedSession> {
-  const cached: CachedSession = { payload, fetchedAt: Date.now() };
-  await chrome.storage.local.set({ [STORAGE_KEY]: cached });
-  return cached;
+/**
+ * Parse the downloaded file into a validated, newest-first session list.
+ * Accepts both the new `{ sessions: [...] }` array format and a legacy
+ * single-object file, so older syncs keep working.
+ */
+function parseSessions(raw: unknown): JoltSessionPayload[] {
+  const items: unknown[] =
+    raw && typeof raw === 'object' && Array.isArray((raw as { sessions?: unknown[] }).sessions)
+      ? (raw as { sessions: unknown[] }).sessions
+      : [raw];
+
+  const sessions = items.map(validatePayload);
+  // Most recent first (createdAt is an ISO 8601 string, lexicographically sortable).
+  return sessions.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** Drop the heavy `imageBase64` so the cache stays within the storage quota. */
+function toSummary(session: JoltSessionPayload): SessionSummary {
+  const { imageBase64: _omit, ...summary } = session;
+  return summary;
 }
 
 /**
- * End-to-end Drive sync: authenticate, locate the folder and file, download,
- * validate, and cache. Returns the cached entry on success.
- *
- * Reuses the already-cached token via a silent acquire (`refreshToken` tries
- * `interactive: false` first), so a user who signed in via the popup is never
- * prompted to sign in again just to sync.
+ * Persist lightweight session summaries in `chrome.storage.local`. Images are
+ * intentionally excluded here — storing base64 photos for every session would
+ * exceed `chrome.storage.local`'s quota (Resource::kQuotaBytes).
  */
-export async function syncFromDrive(): Promise<CachedSession> {
-  const token = await refreshToken();
-
-  const folderId = await findSyncFolderId(token);
-  const fileId = await findSessionFileId(folderId, token);
-
-  const raw = await downloadSessionFile(fileId, token);
-  const payload = validatePayload(raw);
-  return cacheSession(payload);
+async function cacheSessions(
+  sessions: JoltSessionPayload[],
+): Promise<CachedSessions> {
+  const cached: CachedSessions = {
+    sessions: sessions.map(toSummary),
+    fetchedAt: Date.now(),
+  };
+  await chrome.storage.local.set({ [SESSIONS_KEY]: cached });
+  return cached;
 }
 
-/** Read the cached session, or `null` if nothing has been synced yet. */
-export async function getCachedSession(): Promise<CachedSession | null> {
-  const result = await chrome.storage.local.get(STORAGE_KEY);
-  const cached = result[STORAGE_KEY] as CachedSession | undefined;
-  return cached ?? null;
+/** Download + validate the full (image-bearing) session list from Drive. */
+async function fetchAllSessions(): Promise<JoltSessionPayload[]> {
+  const token = await getValidToken();
+  const folderId = await findSyncFolderId(token);
+  const fileId = await findSessionsFileId(folderId, token);
+  const raw = await downloadSessionFile(fileId, token);
+  return parseSessions(raw);
+}
+
+/**
+ * End-to-end Drive sync: fetch all sessions, then cache only lightweight
+ * summaries (no images) so the popup can list them without hitting the
+ * storage quota. Full payloads are re-fetched on demand for autofill.
+ */
+export async function syncFromDrive(): Promise<CachedSessions> {
+  return cacheSessions(await fetchAllSessions());
+}
+
+/**
+ * Fetch one session's FULL payload (including `imageBase64`) from Drive by id.
+ * Used at autofill time so the large image is loaded only when needed, never
+ * cached. Returns null if the id is no longer present.
+ */
+export async function getSessionPayload(
+  sessionId: string,
+): Promise<JoltSessionPayload | null> {
+  const all = await fetchAllSessions();
+  return all.find((s) => s.id === sessionId) ?? null;
+}
+
+/** Read the cached session list, or an empty list if nothing is cached. */
+export async function getCachedSessions(): Promise<CachedSessions> {
+  const result = await chrome.storage.local.get(SESSIONS_KEY);
+  const cached = result[SESSIONS_KEY] as CachedSessions | undefined;
+  return cached ?? { sessions: [], fetchedAt: 0 };
+}
+
+/** Read the ids of sessions the user has already autofilled. */
+export async function getSyncedSessionIds(): Promise<string[]> {
+  const result = await chrome.storage.local.get(SYNCED_IDS_KEY);
+  const ids = result[SYNCED_IDS_KEY] as string[] | undefined;
+  return Array.isArray(ids) ? ids : [];
+}
+
+/** Record `sessionId` as synced; returns the updated id list. */
+export async function markSessionSynced(sessionId: string): Promise<string[]> {
+  const current = await getSyncedSessionIds();
+  if (current.includes(sessionId)) return current;
+  const updated = [...current, sessionId];
+  await chrome.storage.local.set({ [SYNCED_IDS_KEY]: updated });
+  return updated;
 }

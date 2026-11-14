@@ -1,16 +1,18 @@
 /**
- * Popup controller. Pure UI: it renders the cached session, triggers a Drive
- * sync via the background worker, and forwards an autofill request to the
- * content script on the active Jolt tab. No network or OAuth logic lives here.
+ * Popup controller. Renders a chronological list of all Drive sessions
+ * (newest first) with per-row sync status, triggers a Drive sync via the
+ * background worker, and forwards per-session autofill requests to the
+ * content script on the active Jolt tab. No OAuth logic lives here.
  */
 
 import { disconnect, getSignedInSession, signIn, type AuthSession } from './auth';
 import type { AutofillReport } from './content';
 import {
-  CachedSession,
+  CachedSessions,
   ExtensionMessage,
   JoltSessionPayload,
   MessageResponse,
+  SessionSummary,
 } from './types';
 
 /** Hosts the autofill content script is allowed to run on. */
@@ -36,14 +38,13 @@ const els = {
   mainView: document.getElementById('main-view') as HTMLElement,
   disconnectBtn: document.getElementById('disconnect-btn') as HTMLButtonElement,
   empty: document.getElementById('session-empty') as HTMLParagraphElement,
-  title: document.getElementById('session-title') as HTMLParagraphElement,
-  meta: document.getElementById('session-meta') as HTMLParagraphElement,
+  list: document.getElementById('session-list') as HTMLUListElement,
   syncBtn: document.getElementById('sync-btn') as HTMLButtonElement,
-  autofillBtn: document.getElementById('autofill-btn') as HTMLButtonElement,
   status: document.getElementById('status') as HTMLParagraphElement,
 };
 
-let currentPayload: JoltSessionPayload | null = null;
+let sessions: SessionSummary[] = [];
+let syncedIds = new Set<string>();
 
 /** Show a transient status line in one of three tones. */
 function setStatus(text: string, tone: 'ok' | 'err' | 'info' = 'info'): void {
@@ -52,65 +53,112 @@ function setStatus(text: string, tone: 'ok' | 'err' | 'info' = 'info'): void {
 }
 
 /** Send a typed message to the background worker. */
-function sendToBackground<T>(
-  message: ExtensionMessage,
-): Promise<MessageResponse<T>> {
+function sendToBackground<T>(message: ExtensionMessage): Promise<MessageResponse<T>> {
   return chrome.runtime.sendMessage(message) as Promise<MessageResponse<T>>;
 }
 
-/** Render the cached session (or the empty state) into the card. */
-function renderSession(cached: CachedSession | null): void {
-  currentPayload = cached?.payload ?? null;
+/** Format a session's date/time and duration for the row subtitle. */
+function formatMeta(session: SessionSummary): string {
+  const when = new Date(session.createdAt);
+  const stamp = Number.isNaN(when.getTime())
+    ? session.date || '—'
+    : when.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+  return `${stamp} · ${session.durationHours}h ${session.durationMinutes}m`;
+}
 
-  if (!cached) {
+/** Build the right-side action: a "Synced" badge or a "Sync" button. */
+function buildAction(session: SessionSummary): HTMLElement {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'session-action';
+
+  if (syncedIds.has(session.id)) {
+    const badge = document.createElement('button');
+    badge.className = 'synced-badge';
+    badge.title = 'Synced — click to autofill again';
+    badge.innerHTML = '<span class="dot"></span>Synced';
+    badge.addEventListener('click', () => void onSyncSession(session));
+    wrapper.appendChild(badge);
+  } else {
+    const btn = document.createElement('button');
+    btn.className = 'primary';
+    btn.textContent = 'Sync';
+    btn.addEventListener('click', () => void onSyncSession(session));
+    wrapper.appendChild(btn);
+  }
+  return wrapper;
+}
+
+/** Render the full session list (already newest-first from the fetcher). */
+function renderList(): void {
+  els.list.textContent = '';
+
+  if (sessions.length === 0) {
     els.empty.hidden = false;
-    els.title.hidden = true;
-    els.meta.hidden = true;
-    els.autofillBtn.disabled = true;
+    els.list.hidden = true;
     return;
   }
-
-  const { title, durationHours, durationMinutes, targetDocumentName } =
-    cached.payload;
-
-  const hh = String(durationHours).padStart(2, '0');
-  const mm = String(durationMinutes).padStart(2, '0');
-
   els.empty.hidden = true;
-  els.title.hidden = false;
-  els.meta.hidden = false;
-  els.title.textContent = title || '(untitled session)';
-  els.meta.textContent = `${hh}h ${mm}m · ${targetDocumentName || 'no document'}`;
-  els.autofillBtn.disabled = false;
-}
+  els.list.hidden = false;
 
-/** Load whatever is cached and render it on popup open. */
-async function loadCached(): Promise<void> {
-  try {
-    const res = await sendToBackground<CachedSession | null>({
-      type: 'GET_CACHED_SESSION',
-    });
-    if (res.ok) {
-      renderSession(res.data);
-    } else {
-      setStatus(res.error, 'err');
-    }
-  } catch (err) {
-    setStatus(err instanceof Error ? err.message : 'Failed to load.', 'err');
+  for (const session of sessions) {
+    const row = document.createElement('li');
+    row.className = 'session-row';
+    row.dataset.id = session.id;
+
+    const info = document.createElement('div');
+    info.className = 'session-info';
+    const title = document.createElement('span');
+    title.className = 'title';
+    title.textContent = session.title || '(untitled session)';
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    meta.textContent = formatMeta(session);
+    info.append(title, meta);
+
+    row.append(info, buildAction(session));
+    els.list.appendChild(row);
   }
 }
 
-/** Handle "Sync from Drive". */
-async function onSync(): Promise<void> {
+/** Replace a single row's action in place after its sync status changes. */
+function refreshRowAction(session: SessionSummary): void {
+  const row = els.list.querySelector<HTMLLIElement>(`li[data-id="${CSS.escape(session.id)}"]`);
+  const existing = row?.querySelector('.session-action');
+  if (row && existing) {
+    row.replaceChild(buildAction(session), existing);
+  }
+}
+
+/** Load the cached sessions + synced ids and render them on open. */
+async function loadSessions(): Promise<void> {
+  const [listRes, idsRes] = await Promise.all([
+    sendToBackground<CachedSessions>({ type: 'GET_CACHED_SESSIONS' }),
+    sendToBackground<string[]>({ type: 'GET_SYNCED_IDS' }),
+  ]);
+  if (idsRes.ok) syncedIds = new Set(idsRes.data);
+  if (listRes.ok) {
+    sessions = listRes.data.sessions;
+    renderList();
+  } else {
+    setStatus(listRes.error, 'err');
+  }
+}
+
+/** Handle "Sync from Drive": fetch the full list, then re-render. */
+async function onSyncFromDrive(): Promise<void> {
   els.syncBtn.disabled = true;
   setStatus('Syncing from Google Drive…', 'info');
   try {
-    const res = await sendToBackground<CachedSession>({
-      type: 'SYNC_FROM_DRIVE',
-    });
+    const res = await sendToBackground<CachedSessions>({ type: 'SYNC_FROM_DRIVE' });
     if (res.ok) {
-      renderSession(res.data);
-      setStatus('Synced latest session.', 'ok');
+      sessions = res.data.sessions;
+      renderList();
+      setStatus(`Fetched ${sessions.length} session(s).`, 'ok');
     } else {
       setStatus(res.error, 'err');
     }
@@ -121,70 +169,83 @@ async function onSync(): Promise<void> {
   }
 }
 
-/** Handle "Autofill Jolt Form" by messaging the content script. */
-async function onAutofill(): Promise<void> {
-  if (!currentPayload) {
-    setStatus('Nothing to autofill — sync first.', 'err');
-    return;
+/**
+ * Ensure the autofill content script is actually running in the tab before we
+ * message it. A tab opened before the extension was installed/reloaded has no
+ * content script, so `sendMessage` would fail with "receiving end does not
+ * exist". Injecting is idempotent — re-running just re-registers the listener.
+ */
+async function ensureContentScript(tabId: number): Promise<void> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content.js'],
+    });
+  } catch {
+    // Injection can fail on restricted pages; the send below will surface a
+    // clearer error if the script truly isn't reachable.
   }
+}
 
+/** Autofill one specific session into the active Jolt tab. */
+async function onSyncSession(session: SessionSummary): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || !isJoltTab(tab)) {
     setStatus('Open a writewithjolt.com tab to autofill.', 'err');
     return;
   }
 
-  els.autofillBtn.disabled = true;
-  setStatus('Filling the Jolt form…', 'info');
+  setStatus(`Filling “${session.title || 'session'}”…`, 'info');
   try {
+    // The cached summary omits the image to stay within the storage quota;
+    // fetch the full payload (with imageBase64) from Drive just before filling.
+    const payloadRes = await sendToBackground<JoltSessionPayload>({
+      type: 'GET_SESSION_PAYLOAD',
+      sessionId: session.id,
+    });
+    if (!payloadRes.ok) {
+      setStatus(payloadRes.error, 'err');
+      return;
+    }
+
+    await ensureContentScript(tab.id);
     const res = (await chrome.tabs.sendMessage(tab.id, {
       type: 'AUTOFILL_JOLT',
-      payload: currentPayload,
+      payload: payloadRes.data,
     } satisfies ExtensionMessage)) as MessageResponse<AutofillReport>;
 
-    if (res.ok) {
-      const filled = Object.entries(res.data)
-        .filter(([, status]) => status === 'filled')
-        .map(([field]) => field);
-      // Fields the modal exposes but we couldn't fill (missing element, or a
-      // dropdown option that didn't match) are surfaced as warnings.
-      const missing = Object.entries(res.data)
-        .filter(([, status]) => status !== 'filled')
-        .map(([field]) => field);
-
-      if (missing.length === 0) {
-        setStatus(`Filled all fields: ${filled.join(', ')}.`, 'ok');
-      } else {
-        setStatus(
-          `Filled: ${filled.join(', ') || 'nothing'}. Not filled: ${missing.join(', ')}.`,
-          'err',
-        );
-      }
-    } else {
+    if (!res.ok) {
       setStatus(res.error, 'err');
+      return;
     }
-  } catch {
+
+    // Success: record the id, flip the row to the "Synced" badge.
+    const idsRes = await sendToBackground<string[]>({
+      type: 'MARK_SESSION_SYNCED',
+      sessionId: session.id,
+    });
+    if (idsRes.ok) syncedIds = new Set(idsRes.data);
+    refreshRowAction(session);
+    setStatus(`Synced “${session.title || 'session'}”.`, 'ok');
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : '';
     setStatus(
-      'Could not reach the Jolt tab. Reload the page and try again.',
+      `Could not reach the Jolt tab${reason ? ` (${reason})` : ''}. ` +
+        'Make sure the Add Manual Session modal is open, then try again.',
       'err',
     );
-  } finally {
-    els.autofillBtn.disabled = false;
   }
 }
 
-/**
- * Toggle between the sign-in view and the main view by auth state. A valid
- * token means "connected" even when the display email is unavailable.
- */
+/** Toggle between the sign-in view and the main view by auth state. */
 function renderAuth(session: AuthSession | null): void {
   const connected = Boolean(session);
-  const label = session?.email ?? (connected ? 'Connected' : null);
+  const email = session?.email;
   els.badge.className = `badge ${connected ? 'connected' : 'disconnected'}`;
   els.badgeText.textContent = connected
-    ? label === 'Connected'
-      ? 'Connected'
-      : `Connected as ${label}`
+    ? email
+      ? `Connected as ${email}`
+      : 'Connected'
     : 'Not Connected';
   els.disconnectBtn.hidden = !connected;
   els.signinView.hidden = connected;
@@ -196,10 +257,9 @@ async function onSignIn(): Promise<void> {
   els.signinBtn.disabled = true;
   setStatus('Opening Google sign-in…', 'info');
   try {
-    const session = await signIn();
-    renderAuth(session);
+    renderAuth(await signIn());
     setStatus('', 'info');
-    await loadCached();
+    await loadSessions();
   } catch (err) {
     setStatus(err instanceof Error ? err.message : 'Sign-in failed.', 'err');
   } finally {
@@ -212,7 +272,8 @@ async function onDisconnect(): Promise<void> {
   els.disconnectBtn.disabled = true;
   try {
     await disconnect();
-    currentPayload = null;
+    sessions = [];
+    renderList();
     renderAuth(null);
     setStatus('Disconnected.', 'info');
   } finally {
@@ -225,13 +286,12 @@ async function initAuth(): Promise<void> {
   const session = await getSignedInSession();
   renderAuth(session);
   if (session) {
-    await loadCached();
+    await loadSessions();
   }
 }
 
 els.signinBtn.addEventListener('click', () => void onSignIn());
 els.disconnectBtn.addEventListener('click', () => void onDisconnect());
-els.syncBtn.addEventListener('click', () => void onSync());
-els.autofillBtn.addEventListener('click', () => void onAutofill());
+els.syncBtn.addEventListener('click', () => void onSyncFromDrive());
 
 void initAuth();

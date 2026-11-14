@@ -1,4 +1,4 @@
-import { useMemo, useState, type FocusEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FocusEvent, type FormEvent } from 'react';
 import type { JoltSessionPayload, SessionVisibility } from '../types/session';
 import { calculateDuration, combineDateAndTime, toIsoString } from '../utils/duration';
 import { countWords } from '../utils/text';
@@ -8,8 +8,10 @@ import {
   toTimeInputValue,
 } from '../utils/sessionDefaults';
 import { JOLT_DOCUMENTS } from '../data/documents';
+import type { TranscriptionSource } from '../services/transcription';
 import FormField from './FormField';
 import SessionMetaFields from './SessionMetaFields';
+import TranscriptionStatus from './TranscriptionStatus';
 import VisibilityToggle from './VisibilityToggle';
 
 interface SessionFormProps {
@@ -25,6 +27,18 @@ interface SessionFormProps {
   isSignedIn?: boolean;
   /** True while the Drive sync is running; shows a loading label. */
   isSyncing?: boolean;
+  /** True while transcription (Drive or Tesseract) is running. */
+  isTranscribing?: boolean;
+  /** Link to the Google Doc produced by Drive OCR, if any. */
+  transcriptionDocLink?: string | null;
+  /** Which engine produced the current transcription. */
+  transcriptionSource?: TranscriptionSource | null;
+  /** Error from the last transcription attempt, if any. */
+  transcribeError?: string | null;
+  /** Whether to offer the explicit offline (Tesseract) fallback. */
+  canOfflineFallback?: boolean;
+  /** Triggers the offline fallback transcription. */
+  onOfflineFallback?: () => void;
 }
 
 const inputClass =
@@ -37,6 +51,12 @@ export default function SessionForm({
   disabled = false,
   isSignedIn = true,
   isSyncing = false,
+  isTranscribing = false,
+  transcriptionDocLink = null,
+  transcriptionSource = null,
+  transcribeError = null,
+  canOfflineFallback = false,
+  onOfflineFallback,
 }: SessionFormProps) {
   const now = useMemo(() => new Date(), []);
   const [title, setTitle] = useState(() => defaultSessionTitle(now));
@@ -61,6 +81,15 @@ export default function SessionForm({
     event.target.select();
   }
 
+  // Transcription text can arrive after mount (async Drive/Tesseract OCR).
+  // Pull it into the editable notes and word count when it changes.
+  useEffect(() => {
+    if (initialDescription) {
+      setDescription(initialDescription);
+      setWordCount(countWords(initialDescription));
+    }
+  }, [initialDescription]);
+
   /** Edit the notes and keep the word count in sync (still manually overridable). */
   function handleDescriptionChange(value: string) {
     setDescription(value);
@@ -70,6 +99,7 @@ export default function SessionForm({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onSyncToDrive({
+      id: crypto.randomUUID(),
       title,
       description,
       quote,
@@ -136,6 +166,15 @@ export default function SessionForm({
         </span>
         <VisibilityToggle value={visibility} onChange={setVisibility} />
       </div>
+
+      <TranscriptionStatus
+        isTranscribing={isTranscribing}
+        docLink={transcriptionDocLink}
+        source={transcriptionSource}
+        error={transcribeError}
+        canOfflineFallback={canOfflineFallback}
+        onOfflineFallback={() => onOfflineFallback?.()}
+      />
 
       <FormField label="Description">
         {(id) => (

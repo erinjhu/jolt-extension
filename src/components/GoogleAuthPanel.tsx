@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { resolveClientId } from '../services/clientIdStore';
-import { signIn, signOut, type GoogleUser } from '../services/googleAuth';
+import {
+  hasStoredSession,
+  restoreSession,
+  signIn,
+  signOut,
+  type GoogleUser,
+} from '../services/googleAuth';
 import ClientIdConfig from './ClientIdConfig';
 
 /**
@@ -22,6 +28,35 @@ export default function GoogleAuthPanel({ onAuthChange }: GoogleAuthPanelProps) 
   useEffect(() => {
     onAuthChange?.(user);
   }, [user, onAuthChange]);
+
+  // On mount / reload, restore a persisted session. A still-valid token is
+  // used immediately; an expired one triggers a silent refresh inside
+  // restoreSession. We retry briefly so the silent-refresh path works even if
+  // the GIS script hasn't finished loading on the first tick.
+  useEffect(() => {
+    let cancelled = false;
+    let attempts = 0;
+
+    async function tryRestore() {
+      const restored = await restoreSession();
+      if (cancelled) return;
+      if (restored) {
+        setUser(restored);
+        return;
+      }
+      // Only retry when a stored (expired) session needs a silent refresh but
+      // GIS hasn't loaded yet. No stored session means nothing to restore.
+      attempts += 1;
+      if (hasStoredSession() && attempts < 5) {
+        window.setTimeout(() => void tryRestore(), 400);
+      }
+    }
+
+    void tryRestore();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const refreshClientId = useCallback(() => {
     setHasClientId(Boolean(resolveClientId()));

@@ -4,7 +4,13 @@
  * over `chrome.runtime` messages with a uniform success/error envelope.
  */
 
-import { getCachedSession, syncFromDrive } from './driveFetcher';
+import {
+  getCachedSessions,
+  getSessionPayload,
+  getSyncedSessionIds,
+  markSessionSynced,
+  syncFromDrive,
+} from './driveFetcher';
 import { ExtensionMessage, MessageResponse } from './types';
 
 /** Normalize any thrown value into a readable error string. */
@@ -22,9 +28,24 @@ async function handleMessage(
       const cached = await syncFromDrive();
       return { ok: true, data: cached };
     }
-    case 'GET_CACHED_SESSION': {
-      const cached = await getCachedSession();
+    case 'GET_CACHED_SESSIONS': {
+      const cached = await getCachedSessions();
       return { ok: true, data: cached };
+    }
+    case 'GET_SYNCED_IDS': {
+      const ids = await getSyncedSessionIds();
+      return { ok: true, data: ids };
+    }
+    case 'MARK_SESSION_SYNCED': {
+      const ids = await markSessionSynced(message.sessionId);
+      return { ok: true, data: ids };
+    }
+    case 'GET_SESSION_PAYLOAD': {
+      const payload = await getSessionPayload(message.sessionId);
+      if (!payload) {
+        return { ok: false, error: 'That session was not found in Drive. Fetch again.' };
+      }
+      return { ok: true, data: payload };
     }
     default:
       return { ok: false, error: `Unknown message type.` };

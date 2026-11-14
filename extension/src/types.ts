@@ -11,6 +11,8 @@
 export type SessionVisibility = 'public' | 'private';
 
 export interface JoltSessionPayload {
+  /** Stable unique id for this session (used for dedupe + sync tracking). */
+  id: string;
   /** Short session title shown in Jolt. */
   title: string;
   /** Longer free-form notes / OCR body text. */
@@ -39,20 +41,34 @@ export interface JoltSessionPayload {
   createdAt: string;
 }
 
-/** `chrome.storage.local` key under which the cached session lives. */
-export const STORAGE_KEY = 'latestJoltSession' as const;
+/** `chrome.storage.local` key for the cached list of all fetched sessions. */
+export const SESSIONS_KEY = 'joltSessions' as const;
+/** `chrome.storage.local` key for the ids of sessions already autofilled. */
+export const SYNCED_IDS_KEY = 'syncedSessionIds' as const;
 
-/** Shape persisted in `chrome.storage.local`. */
-export interface CachedSession {
-  payload: JoltSessionPayload;
-  /** When the payload was fetched from Drive (epoch ms). */
+/**
+ * Lightweight session summary cached in `chrome.storage.local` for the popup
+ * list. Deliberately OMITS `imageBase64` — base64 photos are large and would
+ * blow past the storage quota. The full payload (with image) is fetched from
+ * Drive on demand when a specific session is autofilled.
+ */
+export type SessionSummary = Omit<JoltSessionPayload, 'imageBase64'>;
+
+/** Cached list of session summaries pulled from Drive, newest first. */
+export interface CachedSessions {
+  /** Summaries sorted by `createdAt` descending (most recent first). */
+  sessions: SessionSummary[];
+  /** When the list was fetched from Drive (epoch ms). */
   fetchedAt: number;
 }
 
 /** Messages exchanged between popup / background / content scripts. */
 export type ExtensionMessage =
   | { type: 'SYNC_FROM_DRIVE' }
-  | { type: 'GET_CACHED_SESSION' }
+  | { type: 'GET_CACHED_SESSIONS' }
+  | { type: 'GET_SYNCED_IDS' }
+  | { type: 'MARK_SESSION_SYNCED'; sessionId: string }
+  | { type: 'GET_SESSION_PAYLOAD'; sessionId: string }
   | { type: 'AUTOFILL_JOLT'; payload: JoltSessionPayload };
 
 /** Uniform response envelope for message handlers. */
