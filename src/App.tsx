@@ -180,7 +180,6 @@ export default function App() {
   function resetFlow() {
     setImageBase64('');
     setSelectedDoc(null);
-    setActiveTab('scan');
     setTranscription(null);
     setEditorSession(null);
     setIsTranscribing(false);
@@ -190,6 +189,15 @@ export default function App() {
     // Bump the key so PhotoCapture (which holds its own preview state)
     // remounts clean, clearing the previous image preview.
     setFlowKey((k) => k + 1);
+  }
+
+  /**
+   * Header toggle. On the post-sync confirmation screen, picking the other
+   * mode starts a fresh flow in that mode; otherwise it just switches views.
+   */
+  function handleTabChange(tab: AppTab) {
+    if (syncedDoc && tab !== activeTab) resetFlow();
+    setActiveTab(tab);
   }
 
   async function handleSyncToDrive(payload: JoltSessionPayload) {
@@ -308,7 +316,7 @@ export default function App() {
     <>
       <AppHeader
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         user={googleUser}
         isBusy={isAuthBusy}
         error={authError}
