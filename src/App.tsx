@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import AuthStatusChip from './components/AuthStatusChip';
+import BottomNav, { type AppTab } from './components/BottomNav';
 import GoogleAuthPanel from './components/GoogleAuthPanel';
-import PhotoCapture from './components/PhotoCapture';
+import PhotoUploadLanding from './components/PhotoUploadLanding';
 import SessionForm from './components/SessionForm';
 import SyncConfirmation from './components/SyncConfirmation';
 import SyncResultBanner from './components/SyncResultBanner';
+import TextEditor from './components/TextEditor';
 import { syncSessionToDrive } from './services/syncSessionToDrive';
 import {
   transcribeViaGoogleDrive,
@@ -13,7 +15,8 @@ import {
 } from './services/transcription';
 import { defaultSessionTitle } from './utils/sessionDefaults';
 import { silentRefresh, type GoogleUser } from './services/googleAuth';
-import type { CreatedDoc } from './services/googleDocsService';
+import { fetchDocumentText, type CreatedDoc } from './services/googleDocsService';
+import type { TargetDoc } from './services/joltDocumentsService';
 import type { JoltSessionPayload } from './types/session';
 
 /**
@@ -23,6 +26,8 @@ import type { JoltSessionPayload } from './types/session';
 export default function App() {
   const [flowKey, setFlowKey] = useState(0);
   const [imageBase64, setImageBase64] = useState('');
+  const [selectedDoc, setSelectedDoc] = useState<TargetDoc | null>(null);
+  const [activeTab, setActiveTab] = useState<AppTab>('scan');
   const [transcription, setTranscription] = useState<TranscriptionResult | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
@@ -58,8 +63,36 @@ export default function App() {
     }
   }
 
-  async function handleImageSelected(dataUrl: string) {
+  /** A document was chosen on the landing screen; reveal the bottom nav. */
+  function handleSelectDoc(doc: TargetDoc) {
+    setSelectedDoc(doc);
+    setActiveTab('scan');
+  }
+
+  /** "Change Doc" — drop the current target and return to selection. */
+  function handleClearDoc() {
+    setSelectedDoc(null);
+    setImageBase64('');
+    setTranscription(null);
+    setTranscribeError(null);
+    setActiveTab('scan');
+  }
+
+  /**
+   * Load the plain text of a document for the editor, refreshing the token
+   * once on a 401. Memoized so TextEditor's effect only re-runs when the
+   * target doc changes, not on every App render.
+   */
+  const loadDocumentText = useCallback(
+    (fileId: string) => withTokenRetry((token) => fetchDocumentText(token, fileId)),
+    // withTokenRetry closes over googleUser; re-create when the user changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [googleUser],
+  );
+
+  async function handleImageSelected(dataUrl: string, doc: TargetDoc) {
     setImageBase64(dataUrl);
+    setSelectedDoc(doc);
     setTranscription(null);
     setTranscribeError(null);
     setSyncedDoc(null);
@@ -85,6 +118,11 @@ export default function App() {
     }
   }
 
+  /** Retake from inside the form: reuse the already-selected target doc. */
+  async function handleRetake(dataUrl: string) {
+    if (selectedDoc) await handleImageSelected(dataUrl, selectedDoc);
+  }
+
   /** Explicit offline fallback: run local Tesseract on the current image. */
   async function handleOfflineFallback() {
     if (!imageBase64) return;
@@ -102,6 +140,8 @@ export default function App() {
   /** Clear every piece of capture/transcription/sync state for a fresh start. */
   function resetFlow() {
     setImageBase64('');
+    setSelectedDoc(null);
+    setActiveTab('scan');
     setTranscription(null);
     setIsTranscribing(false);
     setTranscribeError(null);
@@ -131,61 +171,98 @@ export default function App() {
     }
   }
 
-  const hasImage = Boolean(imageBase64);
   const isSynced = Boolean(syncedDoc);
+  const hasImage = Boolean(imageBase64);
+  // The bottom nav lives once a target doc is chosen, and is hidden on the
+  // post-sync confirmation screen (which runs its own "add new session" flow).
+  const showBottomNav = isSignedIn && Boolean(selectedDoc) && !isSynced;
+
+  /** The Scan Photo feature: landing / capture / review-and-sync form. */
+  function renderScanTab() {
+    if (!hasImage) {
+      // Step 1: choose a target document, then capture/upload a photo.
+      return (
+        <PhotoUploadLanding
+          accessToken={googleUser!.accessToken}
+          selectedDoc={selectedDoc}
+          onSelectDoc={handleSelectDoc}
+          onClearDoc={handleClearDoc}
+          onImageSelected={handleImageSelected}
+          disabled={isTranscribing}
+        />
+      );
+    }
+    // Step 2: the session form, populated from the captured photo's OCR.
+    return (
+      <>
+        <SessionForm
+          key={flowKey}
+          initialDescription={transcription?.text ?? ''}
+          imageBase64={imageBase64}
+          documentName={selectedDoc?.name ?? ''}
+          onImageSelected={handleRetake}
+          onSyncToDrive={handleSyncToDrive}
+          disabled={isTranscribing || isSyncing}
+          isSignedIn={isSignedIn}
+          isSyncing={isSyncing}
+          isTranscribing={isTranscribing}
+          transcriptionDocLink={transcription?.webViewLink ?? null}
+          transcriptionSource={transcription?.source ?? null}
+          transcribeError={transcribeError}
+          canOfflineFallback={!isSignedIn && !isTranscribing}
+          onOfflineFallback={handleOfflineFallback}
+        />
+
+        {isSyncing && (
+          <p className="text-sm text-indigo-300" aria-live="polite">
+            Creating your Google Doc in Drive…
+          </p>
+        )}
+
+        {/* Only errors show here; success is handled by the confirmation view. */}
+        {syncError && <SyncResultBanner doc={null} error={syncError} />}
+      </>
+    );
+  }
 
   return (
-    <main className="mx-auto flex min-h-full max-w-xl flex-col gap-6 px-4 py-6">
-      <header className="flex flex-col gap-1">
-        <div className="flex items-start justify-between gap-3">
-          <h1 className="text-xl font-bold text-white">Jolt Notes OCR</h1>
-          <AuthStatusChip isSignedIn={isSignedIn} email={googleUser?.email ?? null} />
-        </div>
-        <p className="text-sm text-gray-400">
-          Snap a handwritten note, review the text, and prepare it for Jolt.
-        </p>
-      </header>
+    <>
+      <main
+        className={`mx-auto flex min-h-full max-w-xl flex-col gap-6 px-4 py-6 ${
+          showBottomNav ? 'pb-24' : ''
+        }`}
+      >
+        <header className="flex flex-col gap-1">
+          <div className="flex items-start justify-between gap-3">
+            <h1 className="text-xl font-bold text-white">Jolt Notes OCR</h1>
+            <AuthStatusChip isSignedIn={isSignedIn} email={googleUser?.email ?? null} />
+          </div>
+          <p className="text-sm text-gray-400">
+            Snap a handwritten note, review the text, and prepare it for Jolt.
+          </p>
+        </header>
 
-      <GoogleAuthPanel onAuthChange={setGoogleUser} />
+        <GoogleAuthPanel onAuthChange={setGoogleUser} />
 
-      {isSynced ? (
-        <SyncConfirmation doc={syncedDoc} onAddNewSession={resetFlow} />
-      ) : (
-        <>
-          <PhotoCapture
-            key={flowKey}
-            onImageSelected={handleImageSelected}
-            disabled={isTranscribing}
+        {isSynced ? (
+          <SyncConfirmation doc={syncedDoc} onAddNewSession={resetFlow} />
+        ) : !isSignedIn ? (
+          <p className="rounded-none border border-gray-300 bg-white px-6 py-10 text-center font-mono text-sm text-gray-500">
+            Sign in with Google above to start a session.
+          </p>
+        ) : activeTab === 'editor' && selectedDoc ? (
+          // Text Editor feature: distraction-free Google Doc editing.
+          <TextEditor
+            doc={selectedDoc}
+            loadText={loadDocumentText}
+            onChangeDoc={handleClearDoc}
           />
+        ) : (
+          renderScanTab()
+        )}
+      </main>
 
-          {hasImage && (
-            <SessionForm
-              key={imageBase64}
-              initialDescription={transcription?.text ?? ''}
-              imageBase64={imageBase64}
-              onSyncToDrive={handleSyncToDrive}
-              disabled={isTranscribing || isSyncing}
-              isSignedIn={isSignedIn}
-              isSyncing={isSyncing}
-              isTranscribing={isTranscribing}
-              transcriptionDocLink={transcription?.webViewLink ?? null}
-              transcriptionSource={transcription?.source ?? null}
-              transcribeError={transcribeError}
-              canOfflineFallback={!isSignedIn && !isTranscribing}
-              onOfflineFallback={handleOfflineFallback}
-            />
-          )}
-
-          {hasImage && isSyncing && (
-            <p className="text-sm text-indigo-300" aria-live="polite">
-              Creating your Google Doc in Drive…
-            </p>
-          )}
-
-          {/* Only errors show here now; success is handled by the confirmation view. */}
-          {hasImage && syncError && <SyncResultBanner doc={null} error={syncError} />}
-        </>
-      )}
-    </main>
+      {showBottomNav && <BottomNav active={activeTab} onChange={setActiveTab} />}
+    </>
   );
 }

@@ -89,6 +89,31 @@ function cleanExportedText(raw: string): string {
 }
 
 /**
+ * Fetch the current plain-text content of an existing Google Doc by exporting
+ * it through the Drive API (`GET /drive/v3/files/{fileId}/export`). The export
+ * path works under the `drive.file` scope for docs this app created or that
+ * the user granted via the Picker, which is why we prefer it over the broader
+ * Docs API (`documents.get`).
+ *
+ * @param accessToken OAuth token with the `drive.file` scope.
+ * @param fileId      The Google Doc's Drive file id.
+ * @returns The document's plain text, cleaned of BOM / carriage-return noise.
+ */
+export async function fetchDocumentText(
+  accessToken: string,
+  fileId: string,
+): Promise<string> {
+  const exportUrl = `${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}/export?mimeType=text/plain`;
+  const res = await fetch(exportUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Could not load the document text (HTTP ${res.status}).`);
+  }
+  return cleanExportedText(await res.text());
+}
+
+/**
  * Upload a preprocessed image to Drive as a native Google Doc so Google's
  * server-side Vision/OCR engine transcribes the handwriting, then export the
  * resulting text. This is the primary (high-quality) transcription path.
