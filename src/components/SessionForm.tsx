@@ -21,6 +21,8 @@ interface SessionFormProps {
   onSyncToDrive: (payload: JoltSessionPayload) => void;
   /** Disables the sync action while work is in progress. */
   disabled?: boolean;
+  /** Whether the user is signed in to Google; gates the sync action. */
+  isSignedIn?: boolean;
 }
 
 const inputClass =
@@ -31,6 +33,7 @@ export default function SessionForm({
   imageBase64,
   onSyncToDrive,
   disabled = false,
+  isSignedIn = true,
 }: SessionFormProps) {
   const now = useMemo(() => new Date(), []);
   const [title, setTitle] = useState(() => defaultSessionTitle(now));
@@ -157,10 +160,10 @@ export default function SessionForm({
 
       <button
         type="submit"
-        disabled={disabled}
+        disabled={disabled || !isSignedIn}
         className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        Sync to Jolt
+        {isSignedIn ? 'Sync to Jolt' : 'Sign in to Google to sync'}
       </button>
     </form>
   );

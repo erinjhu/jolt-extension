@@ -1,2 +1,7 @@
 node_modules/
 dist/
+
+# Extension signing key and derived public-key material — keep local, never commit.
+key.pem
+pubkey.b64
+pubkey.der

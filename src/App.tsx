@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import AuthStatusChip from './components/AuthStatusChip';
 import GoogleAuthPanel from './components/GoogleAuthPanel';
 import PhotoCapture from './components/PhotoCapture';
 import SessionForm from './components/SessionForm';
 import { recognizeHandwriting } from './services/ocrService';
+import type { GoogleUser } from './services/googleAuth';
 import type { JoltSessionPayload, OcrResult } from './types/session';
 
 /**
@@ -13,6 +15,8 @@ export default function App() {
   const [imageBase64, setImageBase64] = useState('');
   const [ocrResult, setOcrResult] = useState<OcrResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
+  const isSignedIn = Boolean(googleUser);
 
   async function handleImageSelected(dataUrl: string) {
     setImageBase64(dataUrl);
@@ -34,13 +38,16 @@ export default function App() {
   return (
     <main className="mx-auto flex min-h-full max-w-xl flex-col gap-6 px-4 py-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-xl font-bold text-white">Jolt Notes OCR</h1>
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="text-xl font-bold text-white">Jolt Notes OCR</h1>
+          <AuthStatusChip email={googleUser?.email ?? null} />
+        </div>
         <p className="text-sm text-gray-400">
           Snap a handwritten note, review the text, and prepare it for Jolt.
         </p>
       </header>
 
-      <GoogleAuthPanel />
+      <GoogleAuthPanel onAuthChange={setGoogleUser} />
 
       <PhotoCapture onImageSelected={handleImageSelected} disabled={isProcessing} />
 
@@ -61,6 +68,7 @@ export default function App() {
             imageBase64={imageBase64}
             onSyncToDrive={handleSyncToDrive}
             disabled={isProcessing}
+            isSignedIn={isSignedIn}
           />
         </>
       )}

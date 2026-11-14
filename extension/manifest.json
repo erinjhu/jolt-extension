@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Reads the latest synced Jolt session from Google Drive and autofills the Jolt 'Add Manual Session' form.",
   "minimum_chrome_version": "116",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA15HHC+HtZUW8ejQvaMogJ/ZDEO2bynVT54Boapu2wA91fFGnFpsexrt6hHb5wNtBgVKhlLFcmerBg/5hgEp4zUuPwnaenlUAR9pdJLuS3GTqH5Qa6skChG0Ntxknji3AlfV504JxDplQxcmvw3jIN5G8t/RfvuYf47tVc3wavXvzDdN/2qaPhzIypJbTmxnxai8PA6JkpvbBhqWEiWq6kcjOmCTBAF2iB7MIMZ3XTkmathSltcJU8nl9EGiKHPq60dgVr3MHHQvedqYWH7ObRU5agG30fLJZpKDr4LNDSd/i4JybGEXfOPrJMzTxpUuXw3Ery/IWnWTqo28BW4ppwQIDAQAB",
   "permissions": ["identity", "storage", "activeTab", "scripting"],
   "oauth2": {
     "client_id": "83061043011-j8klkl970f6vkuumibne8pof4ll391ag.apps.googleusercontent.com",
