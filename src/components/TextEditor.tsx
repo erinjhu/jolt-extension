@@ -34,6 +34,8 @@ interface TextEditorProps {
   isActive: boolean;
   /** Return to the document selection screen. */
   onChangeDoc: () => void;
+  /** Return to the mode-selection landing screen. */
+  onBack?: () => void;
   /** Finish the session: final metrics + text handed to the logging screen. */
   onFinish: (summary: { metrics: WritingSessionMetrics; text: string }) => void;
 }
@@ -44,6 +46,7 @@ export default function TextEditor({
   saveText,
   isActive,
   onChangeDoc,
+  onBack,
   onFinish,
 }: TextEditorProps) {
   const [text, setText] = useState('');
@@ -174,6 +177,17 @@ export default function TextEditor({
     if (mountedRef.current) setIsFinishing(false);
   }
 
+  /** ← BACK: flush pending edits, then return to the mode landing. */
+  async function handleBack() {
+    if (!onBack) return;
+    if (debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    await saveNow();
+    onBack();
+  }
+
   const statusLabel: Record<SaveStatus, string> = {
     idle: '',
     saved: 'Saved to Drive',
@@ -190,7 +204,18 @@ export default function TextEditor({
   };
 
   return (
-    <section className="flex min-h-[70vh] flex-col rounded-none border border-gray-300 bg-white text-black">
+    <div className="flex flex-col gap-6">
+      {onBack && (
+        <button
+          type="button"
+          onClick={() => void handleBack()}
+          className="self-start rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
+        >
+          ← Back
+        </button>
+      )}
+
+      <section className="flex min-h-[70vh] flex-col rounded-none border border-gray-300 bg-white text-black">
       {/* Compact header: document name, save badge, Change Doc. */}
       <header className="flex items-center justify-between gap-3 border-b border-gray-300 px-3 py-2">
         <div className="flex min-w-0 flex-col">
@@ -246,6 +271,7 @@ export default function TextEditor({
           {isFinishing ? 'Finishing…' : 'Finish Session'}
         </button>
       </div>
-    </section>
+      </section>
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import AppHeader from './components/AppHeader';
 import type { AppTab } from './components/ModeToggle';
+import ModeSelectionLanding from './components/ModeSelectionLanding';
 import PhotoUploadLanding from './components/PhotoUploadLanding';
 import SessionForm from './components/SessionForm';
 import SignInScreen from './components/SignInScreen';
@@ -34,6 +35,8 @@ export default function App() {
   const [imageBase64, setImageBase64] = useState('');
   const [selectedDoc, setSelectedDoc] = useState<TargetDoc | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>('scan');
+  // False until the user picks SCAN or EDITOR on the post-sign-in landing.
+  const [hasChosenInitialMode, setHasChosenInitialMode] = useState(false);
   const [transcription, setTranscription] = useState<TranscriptionResult | null>(null);
   // When set, the user finished a TEXT EDITOR session: the ADD MANUAL SESSION
   // form opens inside the EDITOR view, seeded with the written text and the
@@ -191,13 +194,22 @@ export default function App() {
     setFlowKey((k) => k + 1);
   }
 
-  /**
-   * Header toggle. On the post-sync confirmation screen, picking the other
-   * mode starts a fresh flow in that mode; otherwise it just switches views.
-   */
-  function handleTabChange(tab: AppTab) {
-    if (syncedDoc && tab !== activeTab) resetFlow();
-    setActiveTab(tab);
+  /** Landing card clicked: set the mode and proceed to document selection. */
+  function handleChooseInitialMode(mode: AppTab) {
+    setActiveTab(mode);
+    setHasChosenInitialMode(true);
+  }
+
+  /** Back from the session form: clear the flow and return to the landing. */
+  function handleBackToModes() {
+    resetFlow();
+    setHasChosenInitialMode(false);
+  }
+
+  /** Sign out and make the next sign-in start at the mode landing again. */
+  function handleSignOut() {
+    setHasChosenInitialMode(false);
+    void signOut();
   }
 
   async function handleSyncToDrive(payload: JoltSessionPayload) {
@@ -255,6 +267,7 @@ export default function App() {
           initialDescription={transcription?.text ?? ''}
           imageBase64={imageBase64}
           documentName={selectedDoc?.name ?? ''}
+          onBack={handleBackToModes}
           onImageSelected={handleRetake}
           onSyncToDrive={handleSyncToDrive}
           disabled={isTranscribing || isSyncing}
@@ -294,7 +307,9 @@ export default function App() {
           initialDescription={editorSession.text}
           imageBase64=""
           documentName={selectedDoc?.name ?? ''}
+          documentId={selectedDoc?.id}
           sessionMetrics={editorSession.metrics}
+          onBack={handleBackToModes}
           onImageSelected={handleRetake}
           onSyncToDrive={handleSyncToDrive}
           disabled={isSyncing}
@@ -315,17 +330,17 @@ export default function App() {
   return (
     <>
       <AppHeader
-        activeTab={activeTab}
-        onTabChange={handleTabChange}
         user={googleUser}
         isBusy={isAuthBusy}
         error={authError}
-        onSignOut={() => void signOut()}
+        onSignOut={handleSignOut}
         onSwitchAccount={switchAccount}
       />
       <main className="mx-auto flex min-h-full max-w-xl flex-col gap-6 px-4 py-6">
-        {isSynced ? (
-          <SyncConfirmation doc={syncedDoc} onAddNewSession={resetFlow} />
+        {!hasChosenInitialMode ? (
+          <ModeSelectionLanding onChoose={handleChooseInitialMode} />
+        ) : isSynced ? (
+          <SyncConfirmation doc={syncedDoc} onStartNewSession={resetFlow} />
         ) : selectedDoc ? (
           // Both features stay mounted once a doc is selected so switching
           // tabs never resets the live writing session; only one is shown.
@@ -345,6 +360,7 @@ export default function App() {
                   saveText={saveDocumentTextFn}
                   isActive={activeTab === 'editor'}
                   onChangeDoc={handleClearDoc}
+                  onBack={handleBackToModes}
                   onFinish={handleFinishSession}
                 />
               )}
@@ -352,7 +368,16 @@ export default function App() {
           </>
         ) : (
           // No target doc yet: show the document-selection landing.
-          renderScanTab()
+          <>
+            <button
+              type="button"
+              onClick={() => setHasChosenInitialMode(false)}
+              className="self-start font-mono text-xs text-[#111111] underline underline-offset-4 hover:text-black"
+            >
+              ← Back
+            </button>
+            {renderScanTab()}
+          </>
         )}
       </main>
     </>

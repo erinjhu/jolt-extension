@@ -29,6 +29,12 @@ interface SessionFormProps {
   /** Pre-selected target document name (chosen on the landing screen). */
   documentName?: string;
   /**
+   * Drive file id of the active Google Doc. When present, a subtle "view
+   * document" link appears above the Quote field so the user can open the doc
+   * in a new tab to copy a quote. Omitted for photo-scan sessions.
+   */
+  documentId?: string;
+  /**
    * Tracked analytics from a finished TEXT EDITOR session. When provided, the
    * form seeds Words / Start Time / Duration from these values and shows a
    * read-only WRITING MODES / FLOW summary. Absent for photo-scan sessions.
@@ -36,6 +42,8 @@ interface SessionFormProps {
   sessionMetrics?: WritingSessionMetrics | null;
   /** Fires when a photo is captured/uploaded in the PHOTOS section. */
   onImageSelected: (imageBase64: string) => void;
+  /** Returns to the mode-selection landing screen. */
+  onBack?: () => void;
   /** Invoked with the assembled payload on submit. */
   onSyncToDrive: (payload: JoltSessionPayload) => void;
   disabled?: boolean;
@@ -53,8 +61,10 @@ export default function SessionForm({
   initialDescription,
   imageBase64,
   documentName = '',
+  documentId,
   sessionMetrics = null,
   onImageSelected,
+  onBack,
   onSyncToDrive,
   disabled = false,
   isSignedIn = true,
@@ -122,6 +132,16 @@ export default function SessionForm({
     event.target.select();
   }
 
+  /** Open the active Google Doc in a new tab so the user can copy a quote. */
+  function openDocInNewTab() {
+    if (!documentId) return;
+    window.open(
+      `https://docs.google.com/document/d/${documentId}/edit`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  }
+
   // Description is the user's manual notes; it no longer drives the word
   // count (WORDS comes from the OCR text, still manually overridable).
   function handleDescriptionChange(value: string) {
@@ -158,6 +178,16 @@ export default function SessionForm({
       onSubmit={handleSubmit}
       className="flex flex-col gap-6 rounded-none border border-gray-300 bg-white p-6 text-black"
     >
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          className="self-start rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
+        >
+          ← Back
+        </button>
+      )}
+
       <div className="flex flex-col gap-4 border-b border-black pb-5">
         <h1 className="text-sm font-bold uppercase tracking-wide">Add Manual Session</h1>
 
@@ -213,19 +243,6 @@ export default function SessionForm({
 
       {sessionMetrics && (
         <div className="flex flex-col gap-3">
-          <JoltSectionHeader>Writing Modes</JoltSectionHeader>
-          <div className="flex h-2 w-full overflow-hidden border border-gray-300" aria-hidden>
-            <div className="h-full bg-black" style={{ width: `${sessionMetrics.draftingPct}%` }} />
-            <div
-              className="h-full bg-gray-400"
-              style={{ width: `${sessionMetrics.editingPct}%` }}
-            />
-          </div>
-          <div className="flex justify-between font-mono text-xs text-gray-600">
-            <span>Drafting {sessionMetrics.draftingPct}%</span>
-            <span>Editing {sessionMetrics.editingPct}%</span>
-          </div>
-
           <JoltSectionHeader>Flow</JoltSectionHeader>
           <div className="flex justify-between font-mono text-xs text-gray-600">
             <span>Overall {sessionMetrics.overallWph} wph</span>
@@ -276,17 +293,29 @@ export default function SessionForm({
           onOfflineFallback={() => onOfflineFallback?.()}
         />
 
-        <JoltField label="Quote">
-          {(id) => (
-            <textarea
-              id={id}
-              value={quote}
-              onChange={(e) => setQuote(e.target.value)}
-              className={`${joltInputClass} min-h-28 resize-y py-1.5 font-mono`}
-              placeholder="Share a favorite line from your writing..."
-            />
+        <div className="flex flex-col gap-1">
+          {documentId && (
+            <button
+              type="button"
+              onClick={openDocInNewTab}
+              className="self-start rounded-none border border-[#111111] bg-[#FFFFFF] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
+            >
+              Open doc to find quote ↗
+            </button>
           )}
-        </JoltField>
+
+          <JoltField label="Quote">
+            {(id) => (
+              <textarea
+                id={id}
+                value={quote}
+                onChange={(e) => setQuote(e.target.value)}
+                className={`${joltInputClass} min-h-28 resize-y py-1.5 font-mono`}
+                placeholder="Share a favorite line from your writing..."
+              />
+            )}
+          </JoltField>
+        </div>
 
         <div className="flex flex-col gap-1">
           <span className="text-xs font-bold uppercase tracking-wide text-black">Photos</span>

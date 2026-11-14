@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GoogleUser } from '../services/googleAuth';
-import ModeToggle, { type AppTab } from './ModeToggle';
 import ProfileAvatar from './ProfileAvatar';
 
 interface AppHeaderProps {
-  activeTab: AppTab;
-  onTabChange: (tab: AppTab) => void;
   user: GoogleUser;
   isBusy: boolean;
   error: string | null;
@@ -15,15 +12,12 @@ interface AppHeaderProps {
 }
 
 /**
- * Persistent top bar: JOLT wordmark on the left, SCAN/EDITOR mode toggle in
- * the middle, profile avatar on the right.
+ * Persistent top bar: JOLT wordmark on the left, profile avatar on the right.
  * The avatar toggles a sharp-cornered popover with the user's name, email,
  * and sign-out / switch-account actions. Clicking outside or pressing Escape
  * closes it.
  */
 export default function AppHeader({
-  activeTab,
-  onTabChange,
   user,
   isBusy,
   error,
@@ -59,8 +53,6 @@ export default function AppHeader({
     <header className="sticky top-0 z-30 border-b border-[#111111] bg-[#FFFFFF] text-[#111111]">
       <div className="mx-auto flex h-14 max-w-xl items-center justify-between px-4">
         <span className="pl-[0.35em] text-lg font-bold tracking-[0.35em]">JOLT</span>
-
-        <ModeToggle active={activeTab} onChange={onTabChange} />
 
         <div ref={containerRef} className="relative">
           <button
