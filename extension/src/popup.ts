@@ -5,6 +5,7 @@
  */
 
 import { disconnect, getSignedInSession, signIn, type AuthSession } from './auth';
+import type { AutofillReport } from './content';
 import {
   CachedSession,
   ExtensionMessage,
@@ -12,7 +13,20 @@ import {
   MessageResponse,
 } from './types';
 
-const JOLT_URL_PREFIX = 'https://writewithjolt.com/';
+/** Hosts the autofill content script is allowed to run on. */
+const JOLT_HOSTS = new Set(['writewithjolt.com', 'www.writewithjolt.com']);
+
+/** True when the tab points at a Jolt page we can autofill. */
+function isJoltTab(tab: chrome.tabs.Tab | undefined): boolean {
+  const raw = tab?.url || tab?.pendingUrl;
+  if (!raw) return false;
+  try {
+    const { protocol, hostname } = new URL(raw);
+    return protocol === 'https:' && JOLT_HOSTS.has(hostname);
+  } catch {
+    return false;
+  }
+}
 
 const els = {
   badge: document.getElementById('auth-badge') as HTMLSpanElement,
@@ -115,7 +129,7 @@ async function onAutofill(): Promise<void> {
   }
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !tab.url?.startsWith(JOLT_URL_PREFIX)) {
+  if (!tab?.id || !isJoltTab(tab)) {
     setStatus('Open a writewithjolt.com tab to autofill.', 'err');
     return;
   }
@@ -126,13 +140,26 @@ async function onAutofill(): Promise<void> {
     const res = (await chrome.tabs.sendMessage(tab.id, {
       type: 'AUTOFILL_JOLT',
       payload: currentPayload,
-    } satisfies ExtensionMessage)) as MessageResponse<Record<string, boolean>>;
+    } satisfies ExtensionMessage)) as MessageResponse<AutofillReport>;
 
     if (res.ok) {
       const filled = Object.entries(res.data)
-        .filter(([, v]) => v)
-        .map(([k]) => k);
-      setStatus(`Filled: ${filled.join(', ') || 'nothing'}.`, 'ok');
+        .filter(([, status]) => status === 'filled')
+        .map(([field]) => field);
+      // Fields the modal exposes but we couldn't fill (missing element, or a
+      // dropdown option that didn't match) are surfaced as warnings.
+      const missing = Object.entries(res.data)
+        .filter(([, status]) => status !== 'filled')
+        .map(([field]) => field);
+
+      if (missing.length === 0) {
+        setStatus(`Filled all fields: ${filled.join(', ')}.`, 'ok');
+      } else {
+        setStatus(
+          `Filled: ${filled.join(', ') || 'nothing'}. Not filled: ${missing.join(', ')}.`,
+          'err',
+        );
+      }
     } else {
       setStatus(res.error, 'err');
     }

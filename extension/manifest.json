@@ -15,6 +15,7 @@
   },
   "host_permissions": [
     "https://writewithjolt.com/*",
+    "https://www.writewithjolt.com/*",
     "https://www.googleapis.com/*"
   ],
   "background": {
@@ -27,7 +28,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://writewithjolt.com/*"],
+      "matches": [
+        "https://writewithjolt.com/*",
+        "https://www.writewithjolt.com/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

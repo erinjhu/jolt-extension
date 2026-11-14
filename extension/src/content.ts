@@ -2,139 +2,279 @@
  * Jolt DOM injector. Runs in the page context on writewithjolt.com, listens
  * for an AUTOFILL_JOLT message, and fills the "Add Manual Session" modal.
  *
- * Jolt's form is React-controlled, so simply assigning `input.value` is not
- * enough — React tracks the previous value on the DOM node's internal value
- * tracker. We set the value through the native setter and then dispatch the
- * `input`/`change` events React listens for, which forces its state to sync.
+ * The real Jolt form (captured from the live DOM) does not expose `id`,
+ * `name`, or `aria-label` on its fields — inputs are associated with their
+ * `<label>` only by DOM structure (label + control are siblings inside the
+ * same flex wrapper). Several controls are also custom widgets rather than
+ * native form elements:
+ *   - Document is a custom <button> dropdown, not a <select>.
+ *   - Duration is two bare numeric <input>s distinguished by adjacent
+ *     "hr" / "min" <span>s.
+ *   - Title / Description are <textarea>s behind a placeholder overlay; their
+ *     real `placeholder` attribute is empty, so we match on the overlay text.
  *
- * Every selector is defensive: we try a list of candidates and bail quietly
- * (logging, never throwing into the page) when a field cannot be found, so a
- * markup change on Jolt's side degrades gracefully instead of breaking.
+ * Jolt's form is React-controlled, so we assign values through the element
+ * prototype's native setter (bypassing React's value tracker) and dispatch
+ * `input`, `change`, and `blur` (all bubbling) so component state and the
+ * Submit button's validation update.
  */
 
 import { ExtensionMessage, JoltSessionPayload, MessageResponse } from './types';
 
-/** Find the first element matching any of the supplied selectors. */
-function queryFirst<T extends Element = HTMLElement>(
-  selectors: string[],
-  root: ParentNode = document,
-): T | null {
-  for (const selector of selectors) {
-    const el = root.querySelector<T>(selector);
-    if (el) return el;
-  }
-  return null;
-}
+/** Per-field outcome so the popup can distinguish misses from matches. */
+type FieldStatus = 'filled' | 'not-found' | 'no-match';
+
+type FillableField =
+  | 'title'
+  | 'description'
+  | 'quote'
+  | 'date'
+  | 'hours'
+  | 'minutes'
+  | 'wordCount'
+  | 'document'
+  | 'image';
+
+export type AutofillReport = Record<FillableField, FieldStatus>;
+
+type TextControl = HTMLInputElement | HTMLTextAreaElement;
+
+/* -------------------------------------------------------------------------- */
+/* DOM helpers                                                                */
+/* -------------------------------------------------------------------------- */
 
 /**
- * Find a field by walking labels/placeholders/names. Jolt's inputs are not
- * guaranteed to carry stable ids, so we match on several human-facing hints.
+ * Locate the open "Add Manual Session" modal. The captured markup is a
+ * `<form>` whose first heading reads "Add Manual Session"; fall back to a
+ * dialog container, then the whole document.
  */
-function findInputByHints(
-  hints: string[],
-  root: ParentNode = document,
-): HTMLInputElement | HTMLTextAreaElement | null {
-  const lowered = hints.map((h) => h.toLowerCase());
-
-  // 1. Placeholder / aria-label / name attributes.
-  const candidates = Array.from(
-    root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-      'input, textarea',
-    ),
+function findModalRoot(): ParentNode {
+  const forms = Array.from(document.querySelectorAll<HTMLFormElement>('form'));
+  const manualForm = forms.find((f) =>
+    /add manual session/i.test(f.textContent ?? ''),
   );
-  for (const el of candidates) {
-    const haystack = [
-      el.getAttribute('placeholder'),
-      el.getAttribute('aria-label'),
-      el.getAttribute('name'),
-      el.id,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-    if (lowered.some((h) => haystack.includes(h))) return el;
-  }
+  if (manualForm) return manualForm;
 
-  // 2. <label> text wired to a control via `for`, or wrapping the control.
-  const labels = Array.from(root.querySelectorAll<HTMLLabelElement>('label'));
-  for (const label of labels) {
-    const text = (label.textContent ?? '').trim().toLowerCase();
-    if (!lowered.some((h) => text.includes(h))) continue;
+  const dialog = document.querySelector<HTMLElement>(
+    '[role="dialog"], [aria-modal="true"], .modal, [class*="modal" i]',
+  );
+  return dialog ?? document;
+}
 
-    const forId = label.getAttribute('for');
-    if (forId) {
-      const target = document.getElementById(forId);
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement
-      ) {
-        return target;
-      }
-    }
-    const nested = label.querySelector<HTMLInputElement | HTMLTextAreaElement>(
-      'input, textarea',
-    );
-    if (nested) return nested;
-  }
-
-  return null;
+/** Normalize text for comparison (trim + lowercase + collapse whitespace). */
+function norm(text: string | null | undefined): string {
+  return (text ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 /**
- * Assign a value to a React-controlled input/textarea via the native setter
- * so React's internal value tracker is bypassed, then fire input + change.
+ * Find the field group (the `flex flex-col` wrapper) whose `<label>` text
+ * matches one of the hints, then return the first input/textarea inside it.
+ * This mirrors Jolt's structure where label + control are siblings.
  */
-function setReactValue(
-  el: HTMLInputElement | HTMLTextAreaElement,
+function findByLabel(hints: string[], root: ParentNode): TextControl | null {
+  const wanted = hints.map(norm);
+  const labels = Array.from(root.querySelectorAll<HTMLLabelElement>('label'));
+
+  for (const label of labels) {
+    const text = norm(label.textContent);
+    if (!wanted.some((h) => text === h || text.startsWith(h))) continue;
+
+    // Walk up to the group wrapper and search within it for a control.
+    const group = label.closest('div') ?? label.parentElement;
+    const control =
+      group?.querySelector<TextControl>('input, textarea') ?? null;
+    if (control) return control;
+  }
+  return null;
+}
+
+/** Find a control by the placeholder-overlay span text (Title/Description). */
+function findByOverlayPlaceholder(
+  phrases: string[],
+  root: ParentNode,
+): HTMLTextAreaElement | null {
+  const wanted = phrases.map(norm);
+  const overlays = Array.from(
+    root.querySelectorAll<HTMLElement>('[aria-hidden="true"]'),
+  );
+  for (const overlay of overlays) {
+    if (!wanted.some((p) => norm(overlay.textContent).includes(p))) continue;
+    const container = overlay.parentElement;
+    const textarea = container?.querySelector<HTMLTextAreaElement>('textarea');
+    if (textarea) return textarea;
+  }
+  return null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* React-aware value setting                                                  */
+/* -------------------------------------------------------------------------- */
+
+/** Dispatch the events React / form validation listen for (all bubbling). */
+function fireReactEvents(el: HTMLElement): void {
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+}
+
+/** Assign a value via the native setter so React's value tracker updates. */
+function setNativeValue(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
   value: string,
 ): void {
   const proto =
     el instanceof HTMLTextAreaElement
       ? HTMLTextAreaElement.prototype
-      : HTMLInputElement.prototype;
+      : el instanceof HTMLSelectElement
+        ? HTMLSelectElement.prototype
+        : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-
-  if (setter) {
-    setter.call(el, value);
-  } else {
-    el.value = value;
-  }
-
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
+  if (setter) setter.call(el, value);
+  else (el as { value: string }).value = value;
 }
 
-/** Select an option in a React/native <select> and notify React. */
-function setSelectValue(el: HTMLSelectElement, label: string): boolean {
-  const wanted = label.trim().toLowerCase();
-  const option = Array.from(el.options).find((opt) => {
-    const text = (opt.textContent ?? '').trim().toLowerCase();
-    return text === wanted || opt.value.toLowerCase() === wanted;
-  });
-
-  if (!option) return false;
-
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype,
-    'value',
-  )?.set;
-  if (setter) {
-    setter.call(el, option.value);
-  } else {
-    el.value = option.value;
-  }
-
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
-  return true;
+/** Focus, set, and notify a text control. */
+function fillControl(el: TextControl | null, value: string): FieldStatus {
+  if (!el) return 'not-found';
+  el.focus();
+  el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+  setNativeValue(el, value);
+  fireReactEvents(el);
+  return 'filled';
 }
+
+/* -------------------------------------------------------------------------- */
+/* Field-specific fillers                                                     */
+/* -------------------------------------------------------------------------- */
+
+/** Date: a native `<input type="date">` expecting a `YYYY-MM-DD` value. */
+function fillDate(payload: JoltSessionPayload, root: ParentNode): FieldStatus {
+  const el =
+    root.querySelector<HTMLInputElement>('input[type="date"]') ??
+    (findByLabel(['date'], root) as HTMLInputElement | null);
+  if (!el) return 'not-found';
+  // Derive YYYY-MM-DD from the payload date or createdAt.
+  const raw = payload.date || payload.createdAt || payload.startTime;
+  const ymd = /^\d{4}-\d{2}-\d{2}/.exec(raw)?.[0] ?? '';
+  if (!ymd) return 'no-match';
+  return fillControl(el, ymd);
+}
+
+/**
+ * Duration: two bare numeric inputs distinguished by the trailing "hr" / "min"
+ * <span>. We read each input's following sibling span to decide which is which.
+ */
+function fillDuration(
+  payload: JoltSessionPayload,
+  root: ParentNode,
+): { hours: FieldStatus; minutes: FieldStatus } {
+  const group = findDurationGroup(root);
+  if (!group) return { hours: 'not-found', minutes: 'not-found' };
+
+  const inputs = Array.from(
+    group.querySelectorAll<HTMLInputElement>('input'),
+  );
+
+  let hoursEl: HTMLInputElement | null = null;
+  let minutesEl: HTMLInputElement | null = null;
+
+  for (const input of inputs) {
+    const unit = norm(input.parentElement?.textContent);
+    if (unit.includes('hr') || unit.includes('hour')) hoursEl = input;
+    else if (unit.includes('min')) minutesEl = input;
+  }
+  // Fall back to positional order (first = hours, second = minutes).
+  if (!hoursEl && inputs[0]) hoursEl = inputs[0];
+  if (!minutesEl && inputs[1]) minutesEl = inputs[1];
+
+  return {
+    hours: fillControl(hoursEl, pad2(payload.durationHours)),
+    minutes: fillControl(minutesEl, pad2(payload.durationMinutes)),
+  };
+}
+
+/** Locate the Duration group wrapper via its label. */
+function findDurationGroup(root: ParentNode): HTMLElement | null {
+  const labels = Array.from(root.querySelectorAll<HTMLLabelElement>('label'));
+  const label = labels.find((l) => norm(l.textContent) === 'duration');
+  const group = label?.closest('div');
+  // The group holds both numeric inputs; ensure we grabbed a wrapper with 2.
+  if (group && group.querySelectorAll('input').length >= 2) return group;
+  return group ?? null;
+}
+
+/** Two-digit zero-padded string, as the form displays "00". */
+function pad2(n: number): string {
+  return String(Math.max(0, Math.trunc(n))).padStart(2, '0');
+}
+
+/**
+ * Document: a custom button dropdown. Click to open, then click the option
+ * whose text matches the target document name. Options render in a popover
+ * that may be appended elsewhere in the DOM, so we search the whole document
+ * for the newly-visible option after opening.
+ */
+async function fillDocument(
+  payload: JoltSessionPayload,
+  root: ParentNode,
+): Promise<FieldStatus> {
+  const target = norm(payload.targetDocumentName);
+  if (!target) return 'no-match';
+
+  // The trigger button shows "Select a document".
+  const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('button'));
+  const trigger = buttons.find((b) =>
+    norm(b.textContent).includes('select a document'),
+  );
+  if (!trigger) return 'not-found';
+
+  trigger.click();
+  await nextFrame();
+
+  // Options are usually role=option or list items rendered after opening.
+  const option = findClickableByText(target);
+  if (!option) {
+    // Close the dropdown again to avoid leaving the UI open.
+    trigger.click();
+    return 'no-match';
+  }
+  option.click();
+  await nextFrame();
+  return 'filled';
+}
+
+/** Find a visible clickable element (option/button/li/a) matching text. */
+function findClickableByText(target: string): HTMLElement | null {
+  const selectors = '[role="option"], li, button, a, [data-value]';
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLElement>(selectors),
+  );
+  return (
+    candidates.find((el) => {
+      const text = norm(el.textContent);
+      return (
+        (text === target || text.includes(target)) &&
+        el.offsetParent !== null // visible
+      );
+    }) ?? null
+  );
+}
+
+/** Resolve after the next animation frame (lets a popover render). */
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Image / file injection                                                     */
+/* -------------------------------------------------------------------------- */
 
 /** Decode a base64 data URL into a `File` suitable for a file <input>. */
 function dataUrlToFile(dataUrl: string, filename: string): File | null {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
   if (!match) return null;
 
-  const mime = match[1] || 'application/octet-stream';
+  const mime = match[1] || 'image/jpeg';
   const isBase64 = Boolean(match[2]);
   const data = match[3] ?? '';
 
@@ -143,14 +283,10 @@ function dataUrlToFile(dataUrl: string, filename: string): File | null {
     if (isBase64) {
       const binary = atob(data);
       bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i += 1) {
-        bytes[i] = binary.charCodeAt(i);
-      }
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
     } else {
       bytes = new TextEncoder().encode(decodeURIComponent(data));
     }
-    // Copy into a dedicated ArrayBuffer so the BlobPart type is satisfied
-    // under strict lib typings (avoids SharedArrayBuffer-backed views).
     const buffer = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(buffer).set(bytes);
     return new File([buffer], filename, { type: mime });
@@ -160,19 +296,25 @@ function dataUrlToFile(dataUrl: string, filename: string): File | null {
 }
 
 /**
- * Inject a decoded image into Jolt's file input using the DataTransfer API,
- * which is the only way to programmatically populate `input.files`.
+ * Inject the decoded image into Jolt's hidden file input via DataTransfer,
+ * then fire input/change so the dropzone preview and validation update.
  */
-function injectImage(payload: JoltSessionPayload): boolean {
-  const fileInput = queryFirst<HTMLInputElement>([
-    'input[type="file"][accept*="image"]',
-    'input[type="file"]',
-  ]);
-  if (!fileInput) return false;
+function injectImage(payload: JoltSessionPayload, root: ParentNode): FieldStatus {
+  const fileInput =
+    root.querySelector<HTMLInputElement>('input[type="file"][accept*="image"]') ??
+    root.querySelector<HTMLInputElement>('input[type="file"]');
+  if (!fileInput) return 'not-found';
+  if (!payload.imageBase64) return 'no-match';
 
-  const ext = /png/i.test(payload.imageBase64) ? 'png' : 'jpg';
+  const mimeMatch = /^data:([^;,]+)/.exec(payload.imageBase64)?.[1] ?? '';
+  const ext = /png/i.test(mimeMatch)
+    ? 'png'
+    : /webp/i.test(mimeMatch)
+      ? 'webp'
+      : 'jpg';
+
   const file = dataUrlToFile(payload.imageBase64, `jolt-note.${ext}`);
-  if (!file) return false;
+  if (!file) return 'no-match';
 
   try {
     const dt = new DataTransfer();
@@ -180,112 +322,82 @@ function injectImage(payload: JoltSessionPayload): boolean {
     fileInput.files = dt.files;
     fileInput.dispatchEvent(new Event('input', { bubbles: true }));
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
+    return 'filled';
   } catch {
-    return false;
+    return 'no-match';
   }
 }
 
-/** Autofill every field we can locate; returns a per-field success report. */
-function autofill(payload: JoltSessionPayload): Record<string, boolean> {
-  const report: Record<string, boolean> = {};
+/* -------------------------------------------------------------------------- */
+/* Orchestration                                                              */
+/* -------------------------------------------------------------------------- */
 
-  const titleEl = findInputByHints(['title', 'session name', 'name']);
-  if (titleEl) {
-    setReactValue(titleEl, payload.title);
-    report.title = true;
-  } else {
-    report.title = false;
-  }
+async function autofill(payload: JoltSessionPayload): Promise<AutofillReport> {
+  const root = findModalRoot();
 
+  // Title / Description are textareas behind a placeholder overlay; match on
+  // the overlay prompt text, falling back to label-group lookup.
+  const titleEl =
+    findByOverlayPlaceholder(['name this session'], root) ??
+    (findByLabel(['title'], root) as HTMLTextAreaElement | null);
   const descEl =
-    queryFirst<HTMLTextAreaElement>(['textarea']) ??
-    findInputByHints(['description', 'notes', 'details']);
-  if (descEl) {
-    setReactValue(descEl, payload.description);
-    report.description = true;
-  } else {
-    report.description = false;
-  }
+    findByOverlayPlaceholder(['how did it go'], root) ??
+    (findByLabel(['description'], root) as HTMLTextAreaElement | null);
 
-  const hoursEl = findInputByHints(['hour', 'hrs', 'hh']);
-  if (hoursEl) {
-    setReactValue(hoursEl, String(payload.durationHours));
-    report.hours = true;
-  } else {
-    report.hours = false;
-  }
+  // Quote is a real textarea with a distinctive placeholder.
+  const quoteEl =
+    root.querySelector<HTMLTextAreaElement>(
+      'textarea[placeholder*="favorite line" i]',
+    ) ?? (findByLabel(['quote'], root) as HTMLTextAreaElement | null);
 
-  const minutesEl = findInputByHints(['minute', 'mins', 'mm']);
-  if (minutesEl) {
-    setReactValue(minutesEl, String(payload.durationMinutes));
-    report.minutes = true;
-  } else {
-    report.minutes = false;
-  }
+  const wordsEl = findByLabel(['words', 'word count'], root);
 
-  const docSelect = queryFirst<HTMLSelectElement>([
-    'select[name*="document" i]',
-    'select[aria-label*="document" i]',
-    'select',
-  ]);
-  if (docSelect) {
-    report.document = setSelectValue(docSelect, payload.targetDocumentName);
-  } else {
-    report.document = false;
-  }
+  const duration = fillDuration(payload, root);
 
-  const wordCountEl = findInputByHints(['word count', 'words', 'wordcount']);
-  if (wordCountEl) {
-    setReactValue(wordCountEl, String(payload.wordCount));
-    report.wordCount = true;
-  } else {
-    report.wordCount = false;
-  }
-
-  const quoteEl = findInputByHints(['quote']);
-  if (quoteEl) {
-    setReactValue(quoteEl, payload.quote);
-    report.quote = true;
-  } else {
-    report.quote = false;
-  }
-
-  const dateEl = findInputByHints(['date']);
-  if (dateEl) {
-    setReactValue(dateEl, payload.date);
-    report.date = true;
-  } else {
-    report.date = false;
-  }
-
-  report.image = injectImage(payload);
+  const report: AutofillReport = {
+    title: fillControl(titleEl, payload.title),
+    description: fillControl(descEl, payload.description),
+    quote: fillControl(quoteEl, payload.quote),
+    date: fillDate(payload, root),
+    hours: duration.hours,
+    minutes: duration.minutes,
+    wordCount: fillControl(wordsEl, String(payload.wordCount)),
+    document: await fillDocument(payload, root),
+    image: injectImage(payload, root),
+  };
 
   return report;
 }
 
 chrome.runtime.onMessage.addListener(
-  (message: ExtensionMessage, _sender, sendResponse: (r: MessageResponse) => void) => {
-    if (message.type !== 'AUTOFILL_JOLT') return;
+  (
+    message: ExtensionMessage,
+    _sender,
+    sendResponse: (r: MessageResponse<AutofillReport>) => void,
+  ) => {
+    if (message.type !== 'AUTOFILL_JOLT') return undefined;
 
-    try {
-      const report = autofill(message.payload);
-      const filledAny = Object.values(report).some(Boolean);
-      if (!filledAny) {
+    autofill(message.payload)
+      .then((report) => {
+        const filledAny = Object.values(report).some((s) => s === 'filled');
+        if (!filledAny) {
+          sendResponse({
+            ok: false,
+            error:
+              'Could not find any Jolt form fields. Open the "Add Manual Session" modal first.',
+          });
+          return;
+        }
+        sendResponse({ ok: true, data: report });
+      })
+      .catch((err: unknown) => {
         sendResponse({
           ok: false,
-          error:
-            'Could not find any Jolt form fields. Open the "Add Manual Session" modal first.',
+          error: err instanceof Error ? err.message : 'Autofill failed.',
         });
-        return;
-      }
-      sendResponse({ ok: true, data: report });
-    } catch (err) {
-      sendResponse({
-        ok: false,
-        error: err instanceof Error ? err.message : 'Autofill failed.',
       });
-    }
-    // Synchronous response; no need to keep the channel open.
+
+    // Async response: keep the message channel open.
+    return true;
   },
 );

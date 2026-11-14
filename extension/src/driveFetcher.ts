@@ -51,6 +51,18 @@ async function driveFetch(
   return res;
 }
 
+/**
+ * Mint a fresh token after a 401 (the cached one expired or was revoked).
+ * Prefer a silent refresh; escalate to interactive only if that fails.
+ */
+async function refreshToken(): Promise<string> {
+  try {
+    return await getAuthToken(false);
+  } catch {
+    return getAuthToken(true);
+  }
+}
+
 /** Find the id of the first non-trashed `JoltSync` folder owned by the user. */
 async function findSyncFolderId(token: string): Promise<string> {
   const q = [
@@ -66,7 +78,7 @@ async function findSyncFolderId(token: string): Promise<string> {
     pageSize: '1',
   });
 
-  const res = await driveFetch(`/files?${params.toString()}`, token);
+  const res = await driveFetch(`/files?${params.toString()}`, token, refreshToken);
   if (!res.ok) {
     throw new Error(`Drive folder lookup failed (HTTP ${res.status}).`);
   }
@@ -100,7 +112,7 @@ async function findSessionFileId(
     orderBy: 'modifiedTime desc',
   });
 
-  const res = await driveFetch(`/files?${params.toString()}`, token);
+  const res = await driveFetch(`/files?${params.toString()}`, token, refreshToken);
   if (!res.ok) {
     throw new Error(`Drive file lookup failed (HTTP ${res.status}).`);
   }
@@ -124,6 +136,7 @@ async function downloadSessionFile(
   const res = await driveFetch(
     `/files/${encodeURIComponent(fileId)}?${params.toString()}`,
     token,
+    refreshToken,
   );
   if (!res.ok) {
     throw new Error(`Failed to download session file (HTTP ${res.status}).`);
@@ -197,14 +210,16 @@ async function cacheSession(
 /**
  * End-to-end Drive sync: authenticate, locate the folder and file, download,
  * validate, and cache. Returns the cached entry on success.
+ *
+ * Reuses the already-cached token via a silent acquire (`refreshToken` tries
+ * `interactive: false` first), so a user who signed in via the popup is never
+ * prompted to sign in again just to sync.
  */
 export async function syncFromDrive(): Promise<CachedSession> {
-  const token = await getAuthToken(true);
-  const refresh = () => getAuthToken(true);
+  const token = await refreshToken();
 
   const folderId = await findSyncFolderId(token);
   const fileId = await findSessionFileId(folderId, token);
-  void refresh; // reserved for future silent-retry wiring
 
   const raw = await downloadSessionFile(fileId, token);
   const payload = validatePayload(raw);
