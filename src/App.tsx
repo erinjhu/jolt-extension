@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
 import AuthStatusChip from './components/AuthStatusChip';
 import BottomNav, { type AppTab } from './components/BottomNav';
-import GoogleAuthPanel from './components/GoogleAuthPanel';
 import PhotoUploadLanding from './components/PhotoUploadLanding';
 import SessionForm from './components/SessionForm';
+import SignInScreen from './components/SignInScreen';
 import SyncConfirmation from './components/SyncConfirmation';
 import SyncResultBanner from './components/SyncResultBanner';
 import TextEditor from './components/TextEditor';
@@ -13,8 +13,9 @@ import {
   transcribeViaTesseract,
   type TranscriptionResult,
 } from './services/transcription';
+import { useGoogleAuth } from './hooks/useGoogleAuth';
 import { defaultSessionTitle } from './utils/sessionDefaults';
-import { silentRefresh, type GoogleUser } from './services/googleAuth';
+import { silentRefresh } from './services/googleAuth';
 import { fetchDocumentText, type CreatedDoc } from './services/googleDocsService';
 import type { TargetDoc } from './services/joltDocumentsService';
 import type { JoltSessionPayload } from './types/session';
@@ -31,7 +32,15 @@ export default function App() {
   const [transcription, setTranscription] = useState<TranscriptionResult | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
-  const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
+  const {
+    user: googleUser,
+    isRestoring,
+    isBusy: isAuthBusy,
+    error: authError,
+    signIn,
+    signOut,
+    setUser: setGoogleUser,
+  } = useGoogleAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncedDoc, setSyncedDoc] = useState<CreatedDoc | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -177,6 +186,16 @@ export default function App() {
   // post-sync confirmation screen (which runs its own "add new session" flow).
   const showBottomNav = isSignedIn && Boolean(selectedDoc) && !isSynced;
 
+  // Strict auth gate. Nothing else renders until there is a valid session.
+  if (isRestoring) {
+    // Blank white screen while a stored session is restored, so signed-in
+    // users don't see the sign-in screen flash on reload.
+    return <div className="min-h-dvh w-full bg-[#FFFFFF]" aria-busy="true" />;
+  }
+  if (!googleUser) {
+    return <SignInScreen isBusy={isAuthBusy} error={authError} onSignIn={() => void signIn()} />;
+  }
+
   /** The Scan Photo feature: landing / capture / review-and-sync form. */
   function renderScanTab() {
     if (!hasImage) {
@@ -235,29 +254,43 @@ export default function App() {
         <header className="flex flex-col gap-1">
           <div className="flex items-start justify-between gap-3">
             <h1 className="text-xl font-bold text-white">Jolt Notes OCR</h1>
-            <AuthStatusChip isSignedIn={isSignedIn} email={googleUser?.email ?? null} />
+            <div className="flex items-center gap-2">
+              <AuthStatusChip isSignedIn={isSignedIn} email={googleUser.email} />
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                disabled={isAuthBusy}
+                className="rounded-none border border-gray-600 px-2.5 py-1 text-xs font-medium text-gray-300 hover:text-white disabled:opacity-50"
+              >
+                Sign out
+              </button>
+            </div>
           </div>
           <p className="text-sm text-gray-400">
             Snap a handwritten note, review the text, and prepare it for Jolt.
           </p>
         </header>
 
-        <GoogleAuthPanel onAuthChange={setGoogleUser} />
-
         {isSynced ? (
           <SyncConfirmation doc={syncedDoc} onAddNewSession={resetFlow} />
-        ) : !isSignedIn ? (
-          <p className="rounded-none border border-gray-300 bg-white px-6 py-10 text-center font-mono text-sm text-gray-500">
-            Sign in with Google above to start a session.
-          </p>
-        ) : activeTab === 'editor' && selectedDoc ? (
-          // Text Editor feature: distraction-free Google Doc editing.
-          <TextEditor
-            doc={selectedDoc}
-            loadText={loadDocumentText}
-            onChangeDoc={handleClearDoc}
-          />
+        ) : selectedDoc ? (
+          // Both features stay mounted once a doc is selected so switching
+          // tabs never resets the live writing session; only one is shown.
+          <>
+            <div className={activeTab === 'scan' ? 'flex flex-col gap-6' : 'hidden'}>
+              {renderScanTab()}
+            </div>
+            <div className={activeTab === 'editor' ? 'contents' : 'hidden'}>
+              <TextEditor
+                doc={selectedDoc}
+                loadText={loadDocumentText}
+                isActive={activeTab === 'editor'}
+                onChangeDoc={handleClearDoc}
+              />
+            </div>
+          </>
         ) : (
+          // No target doc yet: show the document-selection landing.
           renderScanTab()
         )}
       </main>
