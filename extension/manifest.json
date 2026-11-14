@@ -9,7 +9,7 @@
   "oauth2": {
     "client_id": "83061043011-j8klkl970f6vkuumibne8pof4ll391ag.apps.googleusercontent.com",
     "scopes": [
-      "https://www.googleapis.com/auth/drive.file",
+      "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/userinfo.email"
     ]
   },

@@ -4,7 +4,7 @@
  * content script on the active Jolt tab. No network or OAuth logic lives here.
  */
 
-import { disconnect, getSignedInEmail, signIn } from './auth';
+import { disconnect, getSignedInSession, signIn, type AuthSession } from './auth';
 import {
   CachedSession,
   ExtensionMessage,
@@ -146,11 +146,19 @@ async function onAutofill(): Promise<void> {
   }
 }
 
-/** Toggle between the sign-in view and the main view by auth state. */
-function renderAuth(email: string | null): void {
-  const connected = Boolean(email);
+/**
+ * Toggle between the sign-in view and the main view by auth state. A valid
+ * token means "connected" even when the display email is unavailable.
+ */
+function renderAuth(session: AuthSession | null): void {
+  const connected = Boolean(session);
+  const label = session?.email ?? (connected ? 'Connected' : null);
   els.badge.className = `badge ${connected ? 'connected' : 'disconnected'}`;
-  els.badgeText.textContent = connected ? `Connected as ${email}` : 'Not Connected';
+  els.badgeText.textContent = connected
+    ? label === 'Connected'
+      ? 'Connected'
+      : `Connected as ${label}`
+    : 'Not Connected';
   els.disconnectBtn.hidden = !connected;
   els.signinView.hidden = connected;
   els.mainView.hidden = !connected;
@@ -161,8 +169,8 @@ async function onSignIn(): Promise<void> {
   els.signinBtn.disabled = true;
   setStatus('Opening Google sign-in…', 'info');
   try {
-    const { email } = await signIn();
-    renderAuth(email);
+    const session = await signIn();
+    renderAuth(session);
     setStatus('', 'info');
     await loadCached();
   } catch (err) {
@@ -187,9 +195,9 @@ async function onDisconnect(): Promise<void> {
 
 /** Resolve the current auth state on open and render the matching view. */
 async function initAuth(): Promise<void> {
-  const email = await getSignedInEmail();
-  renderAuth(email);
-  if (email) {
+  const session = await getSignedInSession();
+  renderAuth(session);
+  if (session) {
     await loadCached();
   }
 }

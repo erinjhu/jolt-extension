@@ -18,7 +18,8 @@ export const OAUTH_SCOPES = [
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
 export interface GoogleUser {
-  email: string;
+  /** The signed-in account email, or null if the profile lookup failed. */
+  email: string | null;
   accessToken: string;
 }
 
@@ -27,19 +28,22 @@ export function isGisReady(): boolean {
   return Boolean(window.google?.accounts?.oauth2);
 }
 
-/** Fetch the signed-in user's email using the granted access token. */
-async function fetchUserEmail(accessToken: string): Promise<string> {
-  const res = await fetch(USERINFO_URL, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Could not read Google profile (HTTP ${res.status}).`);
+/**
+ * Best-effort fetch of the signed-in user's email. Returns null instead of
+ * throwing when the profile can't be read, so a granted token still counts
+ * as a successful sign-in even if the display email is unavailable.
+ */
+async function fetchUserEmail(accessToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(USERINFO_URL, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { email?: string };
+    return body.email ?? null;
+  } catch {
+    return null;
   }
-  const body = (await res.json()) as { email?: string };
-  if (!body.email) {
-    throw new Error('Google profile did not include an email address.');
-  }
-  return body.email;
 }
 
 /**
@@ -65,15 +69,22 @@ export function signIn(): Promise<GoogleUser> {
       client_id: clientId,
       scope: OAUTH_SCOPES,
       callback: (response: GisTokenResponse) => {
+        console.debug('[googleAuth] token callback', {
+          hasToken: Boolean(response.access_token),
+          error: response.error,
+          scope: response.scope,
+        });
         if (response.error || !response.access_token) {
           reject(new Error(response.error_description ?? response.error ?? 'Sign-in failed.'));
           return;
         }
-        fetchUserEmail(response.access_token)
-          .then((email) => resolve({ email, accessToken: response.access_token }))
-          .catch(reject);
+        void fetchUserEmail(response.access_token).then((email) => {
+          console.debug('[googleAuth] signed in; email =', email);
+          resolve({ email, accessToken: response.access_token });
+        });
       },
       error_callback: (error) => {
+        console.error('[googleAuth] error_callback', error);
         reject(new Error(error.message ?? 'Sign-in was cancelled.'));
       },
     });

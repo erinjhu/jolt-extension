@@ -64,7 +64,7 @@ export default function GoogleAuthPanel({ onAuthChange }: GoogleAuthPanelProps) 
             className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-gray-500'}`}
             aria-hidden
           />
-          {isConnected ? `Connected as ${user?.email}` : 'Not Connected'}
+          {isConnected ? (user?.email ? `Connected as ${user.email}` : 'Connected') : 'Not Connected'}
         </span>
 
         {isConnected ? (

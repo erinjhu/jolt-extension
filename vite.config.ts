@@ -6,4 +6,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   base: process.env.VITE_BASE ?? '/jolt-extension/',
+  server: {
+    // Allow the Cloudflare quick-tunnel host used for mobile device testing.
+    allowedHosts: ['turned-besides-toolbar-bios.trycloudflare.com'],
+  },
 });

@@ -40,39 +40,52 @@ export function removeCachedToken(token: string): Promise<void> {
 
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
-/** Fetch the signed-in user's email to confirm identity, given a token. */
-export async function fetchUserEmail(token: string): Promise<string> {
-  const res = await fetch(USERINFO_URL, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Could not read Google profile (HTTP ${res.status}).`);
+/**
+ * Fetch the signed-in user's email to confirm identity, given a token.
+ * Returns null instead of throwing when the profile can't be read, so a
+ * valid token still counts as "signed in" even if the display email is
+ * unavailable (e.g. the userinfo scope was not granted on this token).
+ */
+export async function fetchUserEmail(token: string): Promise<string | null> {
+  try {
+    const res = await fetch(USERINFO_URL, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { email?: string };
+    return body.email ?? null;
+  } catch {
+    return null;
   }
-  const body = (await res.json()) as { email?: string };
-  if (!body.email) {
-    throw new Error('Google profile did not include an email address.');
-  }
-  return body.email;
+}
+
+/** Result of a successful sign-in / session check. */
+export interface AuthSession {
+  token: string;
+  /** Display email, or null when the profile lookup was unavailable. */
+  email: string | null;
 }
 
 /**
  * Interactive sign-in: acquire a token (showing consent if needed) and
- * resolve with the user's email and the token used to confirm it.
+ * resolve with the token plus a best-effort display email.
  */
-export async function signIn(): Promise<{ email: string; token: string }> {
+export async function signIn(): Promise<AuthSession> {
   const token = await getAuthToken(true);
   const email = await fetchUserEmail(token);
   return { email, token };
 }
 
 /**
- * Silently check for an existing grant without prompting. Returns the
- * connected email, or null when the user is not yet signed in.
+ * Silently check for an existing grant without prompting. Returns the active
+ * session when a cached token exists, or null when the user is not signed in.
+ * A failed email lookup does NOT invalidate an otherwise-valid token.
  */
-export async function getSignedInEmail(): Promise<string | null> {
+export async function getSignedInSession(): Promise<AuthSession | null> {
   try {
     const token = await getAuthToken(false);
-    return await fetchUserEmail(token);
+    const email = await fetchUserEmail(token);
+    return { token, email };
   } catch {
     return null;
   }

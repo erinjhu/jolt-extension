@@ -3,8 +3,11 @@ import AuthStatusChip from './components/AuthStatusChip';
 import GoogleAuthPanel from './components/GoogleAuthPanel';
 import PhotoCapture from './components/PhotoCapture';
 import SessionForm from './components/SessionForm';
+import SyncResultBanner from './components/SyncResultBanner';
 import { recognizeHandwriting } from './services/ocrService';
+import { syncSessionToDrive } from './services/syncSessionToDrive';
 import type { GoogleUser } from './services/googleAuth';
+import type { CreatedDoc } from './services/googleDocsService';
 import type { JoltSessionPayload, OcrResult } from './types/session';
 
 /**
@@ -16,6 +19,9 @@ export default function App() {
   const [ocrResult, setOcrResult] = useState<OcrResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncedDoc, setSyncedDoc] = useState<CreatedDoc | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const isSignedIn = Boolean(googleUser);
 
   async function handleImageSelected(dataUrl: string) {
@@ -30,9 +36,23 @@ export default function App() {
     }
   }
 
-  function handleSyncToDrive(payload: JoltSessionPayload) {
-    // Placeholder: Agent 2 will implement the real Jolt/Drive sync.
-    console.log('Session payload ready for sync:', payload);
+  async function handleSyncToDrive(payload: JoltSessionPayload) {
+    if (!googleUser) {
+      setSyncError('Sign in with Google above before syncing.');
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncError(null);
+    setSyncedDoc(null);
+    try {
+      const doc = await syncSessionToDrive(googleUser.accessToken, payload);
+      setSyncedDoc(doc);
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Sync to Drive failed.');
+    } finally {
+      setIsSyncing(false);
+    }
   }
 
   return (
@@ -40,7 +60,7 @@ export default function App() {
       <header className="flex flex-col gap-1">
         <div className="flex items-start justify-between gap-3">
           <h1 className="text-xl font-bold text-white">Jolt Notes OCR</h1>
-          <AuthStatusChip email={googleUser?.email ?? null} />
+          <AuthStatusChip isSignedIn={isSignedIn} email={googleUser?.email ?? null} />
         </div>
         <p className="text-sm text-gray-400">
           Snap a handwritten note, review the text, and prepare it for Jolt.
@@ -67,9 +87,18 @@ export default function App() {
             initialDescription={ocrResult.text}
             imageBase64={imageBase64}
             onSyncToDrive={handleSyncToDrive}
-            disabled={isProcessing}
+            disabled={isProcessing || isSyncing}
             isSignedIn={isSignedIn}
+            isSyncing={isSyncing}
           />
+
+          {isSyncing && (
+            <p className="text-sm text-indigo-300" aria-live="polite">
+              Creating your Google Doc in Drive…
+            </p>
+          )}
+
+          <SyncResultBanner doc={syncedDoc} error={syncError} />
         </>
       )}
     </main>
