@@ -10,7 +10,7 @@
 const UPLOAD_URL =
   'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink';
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
-const DOCS_API_URL = 'https://docs.googleapis.com/v1/documents';
+const DRIVE_UPLOAD_FILES_URL = 'https://www.googleapis.com/upload/drive/v3/files';
 const DOC_MIME = 'application/vnd.google-apps.document';
 
 /** Metadata returned for a freshly created Google Doc. */
@@ -115,35 +115,19 @@ export async function fetchDocumentText(
 }
 
 /**
- * The structural index that marks the end of a document's body. The Docs model
- * always starts the body at index 1; the final segment's `endIndex` points one
- * past the last character (the implicit trailing newline Docs enforces).
- */
-async function fetchBodyEndIndex(accessToken: string, documentId: string): Promise<number> {
-  const res = await fetch(`${DOCS_API_URL}/${encodeURIComponent(documentId)}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Could not read the document before saving (HTTP ${res.status}).`);
-  }
-  const body = (await res.json()) as {
-    body?: { content?: { endIndex?: number }[] };
-  };
-  const content = body.body?.content ?? [];
-  // The largest endIndex across top-level segments is the body's end.
-  return content.reduce((max, seg) => Math.max(max, seg.endIndex ?? 0), 1);
-}
-
-/**
- * Overwrite the full text of an existing Google Doc via the Docs API
- * `documents.batchUpdate`. The body range (index 1 to `endIndex - 1`) is
- * deleted, then the new text is inserted at index 1 in a single atomic batch.
+ * Overwrite the full text of an existing Google Doc by uploading new
+ * `text/plain` content through the Drive media-update endpoint
+ * (`PATCH /upload/drive/v3/files/{fileId}?uploadType=media`). Drive re-converts
+ * the plain text into the document's body, replacing the previous content.
  *
- * Docs always keeps a trailing newline, so a truly empty doc reports an
- * `endIndex` of 2; in that case there's nothing to delete and we only insert.
+ * This uses the Drive API (same as the editor's read/export path) rather than
+ * the Google Docs API. The `drive.file` scope authorizes it for docs this app
+ * created or that the user granted via the Picker, and it does not require the
+ * separate Google Docs API to be enabled on the Cloud project — which is what
+ * previously produced an HTTP 403 on `docs.googleapis.com`.
  *
- * @param accessToken OAuth token authorized for the Google Docs API.
- * @param documentId  The target document's id.
+ * @param accessToken OAuth token with the `drive.file` scope.
+ * @param documentId  The Google Doc's Drive file id.
  * @param newText     The full plain text the document should contain.
  */
 export async function saveDocumentText(
@@ -151,38 +135,15 @@ export async function saveDocumentText(
   documentId: string,
   newText: string,
 ): Promise<void> {
-  const endIndex = await fetchBodyEndIndex(accessToken, documentId);
-
-  // deleteContentRange requires endIndex > startIndex; an empty body
-  // (endIndex <= 2) has no content to remove, so we only insert.
-  const requests: unknown[] = [];
-  if (endIndex > 2) {
-    requests.push({
-      deleteContentRange: {
-        range: { startIndex: 1, endIndex: endIndex - 1 },
-      },
-    });
-  }
-  if (newText.length > 0) {
-    requests.push({
-      insertText: { location: { index: 1 }, text: newText },
-    });
-  }
-
-  // Nothing to change (clearing an already-empty doc) — skip the round trip.
-  if (requests.length === 0) return;
-
-  const res = await fetch(
-    `${DOCS_API_URL}/${encodeURIComponent(documentId)}:batchUpdate`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ requests }),
+  const updateUrl = `${DRIVE_UPLOAD_FILES_URL}/${encodeURIComponent(documentId)}?uploadType=media`;
+  const res = await fetch(updateUrl, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'text/plain; charset=UTF-8',
     },
-  );
+    body: newText,
+  });
   if (!res.ok) {
     throw new Error(`Could not save the document (HTTP ${res.status}).`);
   }
