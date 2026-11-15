@@ -1,8 +1,6 @@
 import type { TranscriptionSource } from '../services/transcription';
 
 interface TranscriptionStatusProps {
-  /** True while a transcription (Drive or Tesseract) is running. */
-  isTranscribing: boolean;
   /** Which engine produced the current text, or null if none yet. */
   source: TranscriptionSource | null;
   /** Error from the last transcription attempt, if any. */
@@ -19,7 +17,6 @@ interface TranscriptionStatusProps {
  * offline-fallback control when the user is not signed in.
  */
 export default function TranscriptionStatus({
-  isTranscribing,
   source,
   error,
   canOfflineFallback,
@@ -27,13 +24,7 @@ export default function TranscriptionStatus({
 }: TranscriptionStatusProps) {
   return (
     <div className="flex flex-col gap-2">
-      {isTranscribing && (
-        <p className="text-sm text-indigo-300" aria-live="polite">
-          Transcribing handwriting via Google Drive…
-        </p>
-      )}
-
-      {!isTranscribing && source === 'tesseract' && (
+      {source === 'tesseract' && (
         <p className="text-xs text-amber-300">
           Transcribed offline with Tesseract. Sign in to Google for higher-quality OCR.
         </p>

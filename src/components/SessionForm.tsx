@@ -10,7 +10,6 @@ import {
 import type { WritingSessionMetrics } from '../hooks/useWritingSession';
 import { JOLT_DOCUMENTS } from '../data/documents';
 import type { TranscriptionSource } from '../services/transcription';
-import LeaveSessionModal from './LeaveSessionModal';
 import PhotoCapture from './PhotoCapture';
 import TranscriptionStatus from './TranscriptionStatus';
 import {
@@ -42,13 +41,6 @@ interface SessionFormProps {
    * read-only WRITING MODES / FLOW summary. Absent for photo-scan sessions.
    */
   sessionMetrics?: WritingSessionMetrics | null;
-  /**
-   * Resolve the active document's Drive folder name (OAuth-aware, defaults to
-   * "My Drive"). When provided together with `documentId` and no
-   * `sessionMetrics` (i.e. a Scan session), pressing ← BACK opens the same
-   * leave-session confirmation + post-discard Drive popup as the editor.
-   */
-  loadFolderName?: (fileId: string) => Promise<string>;
   /** Fires when a photo is captured/uploaded in the PHOTOS section. */
   onImageSelected: (imageBase64: string) => void;
   /** Returns to the mode-selection landing screen. */
@@ -71,7 +63,6 @@ export default function SessionForm({
   documentName = '',
   documentId,
   sessionMetrics = null,
-  loadFolderName,
   onImageSelected,
   onBack,
   onSyncToDrive,
@@ -151,53 +142,6 @@ export default function SessionForm({
     );
   }
 
-  // ── Scan-mode ← BACK confirmation ──────────────────────────────────────
-  // Only Scan sessions (no tracked editor metrics) guard back navigation; a
-  // finished editor session already confirmed before reaching this form.
-  const isScanSession = !sessionMetrics;
-  // There's scanned work worth protecting once a doc is selected and a photo
-  // has been captured (imageBase64) or text extracted (initialDescription).
-  const hasScannedWork = Boolean(imageBase64) || Boolean(initialDescription.trim());
-  const [leaveStage, setLeaveStage] = useState<'closed' | 'confirm' | 'discarded'>('closed');
-  const [discardFolderName, setDiscardFolderName] = useState('My Drive');
-
-  /** ← BACK: confirm before leaving an active Scan session; else go back. */
-  function handleBackClick() {
-    if (!onBack) return;
-    if (isScanSession && hasScannedWork) {
-      setLeaveStage('confirm');
-      return;
-    }
-    onBack();
-  }
-
-  /** Modal: FINISH & SAVE — the OCR'd text is already in the Doc; stay on the
-   *  pre-filled form so the user can complete and sync the session. */
-  function handleConfirmFinish() {
-    setLeaveStage('closed');
-  }
-
-  /**
-   * Modal: DISCARD — the already-appended Doc text stays in Drive; only the
-   * Jolt scan session is dropped. Resolve the folder name, then show the
-   * "saved to Drive" confirmation (navigation waits for OK).
-   */
-  async function handleDiscard() {
-    if (loadFolderName && documentId) {
-      try {
-        setDiscardFolderName(await loadFolderName(documentId));
-      } catch {
-        setDiscardFolderName('My Drive');
-      }
-    }
-    setLeaveStage('discarded');
-  }
-
-  /** Post-discard OK: close the popup and complete the navigation back. */
-  function handleDiscardedOk() {
-    setLeaveStage('closed');
-    onBack?.();
-  }
 
   // Description is the user's manual notes; it no longer drives the word
   // count (WORDS comes from the OCR text, still manually overridable).
@@ -231,7 +175,6 @@ export default function SessionForm({
   }
 
   return (
-    <>
     <form
       onSubmit={handleSubmit}
       className="flex flex-col gap-6 rounded-none border border-gray-300 bg-white p-6 text-black"
@@ -239,14 +182,14 @@ export default function SessionForm({
       {onBack && (
         <button
           type="button"
-          onClick={handleBackClick}
+          onClick={onBack}
           className="self-start rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
         >
           ← Back
         </button>
       )}
 
-      <div className="flex flex-col gap-4 border-b border-black pb-5">
+      <div className="flex flex-col gap-4">
         <h1 className="text-sm font-bold uppercase tracking-wide">Add Manual Session</h1>
 
         {/* Date stays compact (auto width); Document expands to fill the row. */}
@@ -325,6 +268,7 @@ export default function SessionForm({
               onChange={(e) => setTitle(e.target.value)}
               onFocus={selectAll}
               className={joltSingleLineClass}
+              placeholder="Name your session"
               required
             />
           )}
@@ -337,13 +281,12 @@ export default function SessionForm({
               value={description}
               onChange={(e) => handleDescriptionChange(e.target.value)}
               className={`${joltInputClass} min-h-28 resize-y py-1.5`}
-              placeholder="Write or paste your session notes..."
+              placeholder="How did it go?"
             />
           )}
         </JoltField>
 
         <TranscriptionStatus
-          isTranscribing={isTranscribing}
           source={transcriptionSource}
           error={transcribeError}
           canOfflineFallback={canOfflineFallback}
@@ -387,18 +330,5 @@ export default function SessionForm({
         {!isSignedIn ? 'Sign in to Google to sync' : isSyncing ? 'Syncing…' : 'Sync to Jolt'}
       </button>
     </form>
-
-    {leaveStage !== 'closed' && (
-      <LeaveSessionModal
-        stage={leaveStage}
-        isBusy={false}
-        folderName={discardFolderName}
-        onFinishAndSave={handleConfirmFinish}
-        onDiscard={() => void handleDiscard()}
-        onDiscardedOk={handleDiscardedOk}
-        onDismiss={() => setLeaveStage('closed')}
-      />
-    )}
-    </>
   );
 }

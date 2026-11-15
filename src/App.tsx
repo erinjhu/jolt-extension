@@ -1,8 +1,10 @@
 import { useCallback, useState } from 'react';
 import AppHeader from './components/AppHeader';
 import type { AppTab } from './components/ModeToggle';
+import LeaveSessionModal from './components/LeaveSessionModal';
 import ModeSelectionLanding from './components/ModeSelectionLanding';
 import PhotoUploadLanding from './components/PhotoUploadLanding';
+import ScanProgress from './components/ScanProgress';
 import SessionForm from './components/SessionForm';
 import SignInScreen from './components/SignInScreen';
 import SyncConfirmation from './components/SyncConfirmation';
@@ -48,6 +50,11 @@ export default function App() {
   } | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
+  // Scan-mode ← BACK leave-session confirmation + post-discard Drive popup.
+  const [scanLeaveStage, setScanLeaveStage] = useState<'closed' | 'confirm' | 'discarded'>(
+    'closed',
+  );
+  const [scanDiscardFolder, setScanDiscardFolder] = useState('My Drive');
   const {
     user: googleUser,
     isRestoring,
@@ -214,6 +221,43 @@ export default function App() {
     setHasChosenInitialMode(false);
   }
 
+  /**
+   * Scan ← BACK: if there's scanned work (a captured photo or extracted text),
+   * confirm before leaving so the session isn't lost; otherwise go straight
+   * back to the landing.
+   */
+  function handleScanBack() {
+    const hasScannedWork = Boolean(imageBase64) || Boolean(transcription?.text?.trim());
+    if (hasScannedWork) {
+      setScanLeaveStage('confirm');
+      return;
+    }
+    handleBackToModes();
+  }
+
+  /**
+   * Scan DISCARD: the OCR'd text already lives in the Google Doc, so only the
+   * Jolt scan session is dropped. Resolve the folder name, then show the
+   * "saved to Drive" confirmation (navigation waits for OK).
+   */
+  async function handleScanDiscard() {
+    const docId = selectedDoc?.id ?? transcription?.docId;
+    if (docId) {
+      try {
+        setScanDiscardFolder(await loadDocumentFolderName(docId));
+      } catch {
+        setScanDiscardFolder('My Drive');
+      }
+    }
+    setScanLeaveStage('discarded');
+  }
+
+  /** Scan post-discard OK: close the popup and complete the navigation back. */
+  function handleScanDiscardedOk() {
+    setScanLeaveStage('closed');
+    handleBackToModes();
+  }
+
   /** Sign out and make the next sign-in start at the mode landing again. */
   function handleSignOut() {
     setHasChosenInitialMode(false);
@@ -268,16 +312,41 @@ export default function App() {
       );
     }
     // Step 2: the session form, populated from the captured photo's OCR.
+    // The ← BACK button sits on top, then a monochrome progress bar: reading
+    // the note (OCR), and later creating the Google Doc in Drive (sync).
+    const scanComplete = !isTranscribing && transcription?.source === 'google-drive';
     return (
       <>
+        <button
+          type="button"
+          onClick={handleScanBack}
+          className="self-start rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
+        >
+          ← Back
+        </button>
+
+        {/* While reading the note, dim + block the rest of the screen and
+            raise the progress bar above the overlay. */}
+        {isTranscribing && (
+          <div className="fixed inset-0 z-40 bg-black/40" aria-hidden />
+        )}
+
+        {(isTranscribing || scanComplete) && (
+          <div className={isTranscribing ? 'relative z-50' : undefined}>
+            <ScanProgress
+              isScanning={isTranscribing}
+              isComplete={scanComplete}
+              documentId={selectedDoc?.id ?? transcription?.docId ?? null}
+            />
+          </div>
+        )}
+
         <SessionForm
           key={flowKey}
           initialDescription={transcription?.text ?? ''}
           imageBase64={imageBase64}
           documentName={selectedDoc?.name ?? ''}
           documentId={transcription?.docId ?? selectedDoc?.id}
-          loadFolderName={loadDocumentFolderName}
-          onBack={handleBackToModes}
           onImageSelected={handleRetake}
           onSyncToDrive={handleSyncToDrive}
           disabled={isTranscribing || isSyncing}
@@ -290,14 +359,36 @@ export default function App() {
           onOfflineFallback={handleOfflineFallback}
         />
 
+        {/* Creating the Google Doc in Drive (sync step) — below the Sync
+            button; dim + block the rest of the screen while it runs. */}
         {isSyncing && (
-          <p className="text-sm text-indigo-300" aria-live="polite">
-            Creating your Google Doc in Drive…
-          </p>
+          <div className="fixed inset-0 z-40 bg-black/40" aria-hidden />
+        )}
+        {isSyncing && (
+          <div className="relative z-50">
+            <ScanProgress
+              isScanning
+              isComplete={false}
+              scanningLabel="Creating doc in Google Drive…"
+              showOpenDoc={false}
+            />
+          </div>
         )}
 
         {/* Only errors show here; success is handled by the confirmation view. */}
         {syncError && <SyncResultBanner doc={null} error={syncError} />}
+
+        {scanLeaveStage !== 'closed' && (
+          <LeaveSessionModal
+            stage={scanLeaveStage}
+            isBusy={false}
+            folderName={scanDiscardFolder}
+            onFinishAndSave={() => setScanLeaveStage('closed')}
+            onDiscard={() => void handleScanDiscard()}
+            onDiscardedOk={handleScanDiscardedOk}
+            onDismiss={() => setScanLeaveStage('closed')}
+          />
+        )}
       </>
     );
   }
