@@ -37,12 +37,36 @@ export default function PhotoCapture({ onImageSelected, disabled = false }: Phot
 
   return (
     <div className="flex flex-col gap-2">
+      {/* Entire card is clickable; tapping anywhere opens the camera / picker. */}
       <label
         htmlFor={inputId}
-        className="flex cursor-pointer items-center justify-center border border-dashed border-gray-300 bg-white px-4 py-6 text-center font-mono text-sm text-gray-500 transition hover:border-black hover:text-black aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
         aria-disabled={disabled}
+        className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-none border border-dashed border-[#111111] bg-[#FFFFFF] px-6 py-10 text-center text-[#111111] transition hover:bg-gray-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
       >
-        {previewUrl ? 'Retake or choose another photo' : 'Snap or upload your handwritten page'}
+        {/* Monochrome camera icon. */}
+        <svg
+          width="32"
+          height="32"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 8a2 2 0 0 1 2-2h2l1.2-1.6a1 1 0 0 1 .8-.4h6a1 1 0 0 1 .8.4L19 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Z" />
+          <circle cx="12" cy="12.5" r="3.2" />
+        </svg>
+
+        <div className="flex flex-col gap-1">
+          <span className="text-sm font-bold uppercase tracking-wide">
+            {previewUrl ? 'Retake or choose another photo' : 'Click to snap or upload photos'}
+          </span>
+          <span className="font-mono text-xs text-gray-500">
+            Take a photo or choose from your library
+          </span>
+        </div>
       </label>
 
       <input
@@ -61,7 +85,7 @@ export default function PhotoCapture({ onImageSelected, disabled = false }: Phot
         <img
           src={previewUrl}
           alt="Selected note preview"
-          className="w-full border border-gray-300 object-contain"
+          className="w-full rounded-none border border-gray-300 object-contain"
         />
       )}
     </div>

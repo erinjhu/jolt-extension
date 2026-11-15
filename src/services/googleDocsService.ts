@@ -115,6 +115,47 @@ export async function fetchDocumentText(
 }
 
 /**
+ * Resolve the human-readable name of the Drive folder a document lives in.
+ *
+ * Looks up the file's `parents`, then fetches that parent's `name`. Falls back
+ * cleanly to `"My Drive"` when the file has no parent (root), when the parent
+ * lookup is denied/unavailable under `drive.file`, or on any error — so the
+ * caller always gets a usable label and never has to handle a throw.
+ *
+ * @param accessToken OAuth token with the `drive.file` scope.
+ * @param fileId      The Google Doc's Drive file id.
+ * @returns The parent folder's name, or `"My Drive"` as a safe default.
+ */
+export async function fetchDocumentFolderName(
+  accessToken: string,
+  fileId: string,
+): Promise<string> {
+  const DEFAULT_FOLDER = 'My Drive';
+  try {
+    const fileRes = await fetch(
+      `${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}?fields=parents`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!fileRes.ok) return DEFAULT_FOLDER;
+
+    const { parents } = (await fileRes.json()) as { parents?: string[] };
+    const parentId = parents?.[0];
+    if (!parentId) return DEFAULT_FOLDER;
+
+    const parentRes = await fetch(
+      `${DRIVE_FILES_URL}/${encodeURIComponent(parentId)}?fields=name`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!parentRes.ok) return DEFAULT_FOLDER;
+
+    const { name } = (await parentRes.json()) as { name?: string };
+    return name?.trim() || DEFAULT_FOLDER;
+  } catch {
+    return DEFAULT_FOLDER;
+  }
+}
+
+/**
  * Overwrite the full text of an existing Google Doc by uploading new
  * `text/plain` content through the Drive media-update endpoint
  * (`PATCH /upload/drive/v3/files/{fileId}?uploadType=media`). Drive re-converts

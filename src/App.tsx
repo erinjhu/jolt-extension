@@ -18,6 +18,7 @@ import { useGoogleAuth } from './hooks/useGoogleAuth';
 import { defaultSessionTitle } from './utils/sessionDefaults';
 import { silentRefresh } from './services/googleAuth';
 import {
+  fetchDocumentFolderName,
   fetchDocumentText,
   saveDocumentText,
   type CreatedDoc,
@@ -118,6 +119,13 @@ export default function App() {
   const saveDocumentTextFn = useCallback(
     (fileId: string, newText: string) =>
       withTokenRetry((token) => saveDocumentText(token, fileId, newText)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [googleUser],
+  );
+
+  /** Resolve the document's Drive folder name, token-retrying on a 401. */
+  const loadDocumentFolderName = useCallback(
+    (fileId: string) => withTokenRetry((token) => fetchDocumentFolderName(token, fileId)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [googleUser],
   );
@@ -267,6 +275,8 @@ export default function App() {
           initialDescription={transcription?.text ?? ''}
           imageBase64={imageBase64}
           documentName={selectedDoc?.name ?? ''}
+          documentId={transcription?.docId ?? selectedDoc?.id}
+          loadFolderName={loadDocumentFolderName}
           onBack={handleBackToModes}
           onImageSelected={handleRetake}
           onSyncToDrive={handleSyncToDrive}
@@ -274,7 +284,6 @@ export default function App() {
           isSignedIn={isSignedIn}
           isSyncing={isSyncing}
           isTranscribing={isTranscribing}
-          transcriptionDocLink={transcription?.webViewLink ?? null}
           transcriptionSource={transcription?.source ?? null}
           transcribeError={transcribeError}
           canOfflineFallback={!isSignedIn && !isTranscribing}
@@ -358,6 +367,7 @@ export default function App() {
                   doc={selectedDoc}
                   loadText={loadDocumentText}
                   saveText={saveDocumentTextFn}
+                  loadFolderName={loadDocumentFolderName}
                   isActive={activeTab === 'editor'}
                   onChangeDoc={handleClearDoc}
                   onBack={handleBackToModes}

@@ -23,7 +23,7 @@ export default function SignInScreen({ isBusy, error, onSignIn }: SignInScreenPr
           {/* Right padding offsets the trailing letter-space so JOLT looks centered. */}
           <h1 className="pl-[0.35em] text-4xl font-bold tracking-[0.35em]">JOLT</h1>
           <p className="font-mono text-xs leading-relaxed text-gray-600">
-            Distraction-free writing, synced with Google Drive
+            Track your writing from your phone
           </p>
         </div>
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'reac
 import { countWords } from '../utils/text';
 import { useWritingSession, type WritingSessionMetrics } from '../hooks/useWritingSession';
 import EditorStatsBar from './EditorStatsBar';
+import LeaveSessionModal from './LeaveSessionModal';
 import type { TargetDoc } from '../services/joltDocumentsService';
 
 /** Delay after the last keystroke before an auto-save fires. */
@@ -28,12 +29,20 @@ interface TextEditorProps {
   /** Overwrite the Google Doc's content (OAuth-aware, token-retrying). */
   saveText: (fileId: string, text: string) => Promise<void>;
   /**
+   * Resolve the document's Drive folder name (OAuth-aware). Defaults to
+   * "My Drive" on error. Used in the post-discard confirmation message.
+   */
+  loadFolderName?: (fileId: string) => Promise<string>;
+  /**
    * Whether the TEXT EDITOR tab is the one currently showing. The active
    * timer pauses when this is false, and leaving the tab flushes a save.
    */
   isActive: boolean;
-  /** Return to the document selection screen. */
-  onChangeDoc: () => void;
+  /**
+   * Return to the document selection screen. Currently unused in the UI (the
+   * Change Doc button was removed), kept for call-site compatibility.
+   */
+  onChangeDoc?: () => void;
   /** Return to the mode-selection landing screen. */
   onBack?: () => void;
   /** Finish the session: final metrics + text handed to the logging screen. */
@@ -44,8 +53,8 @@ export default function TextEditor({
   doc,
   loadText,
   saveText,
+  loadFolderName,
   isActive,
-  onChangeDoc,
   onBack,
   onFinish,
 }: TextEditorProps) {
@@ -55,6 +64,11 @@ export default function TextEditor({
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [isFinishing, setIsFinishing] = useState(false);
+  // ← BACK modal stages: closed, the leave-confirm prompt, or the post-discard
+  // "saved to Drive" confirmation. `discardBusy` covers the save+folder lookup.
+  const [leaveStage, setLeaveStage] = useState<'closed' | 'confirm' | 'discarded'>('closed');
+  const [discardBusy, setDiscardBusy] = useState(false);
+  const [discardFolderName, setDiscardFolderName] = useState('My Drive');
   // Browser-tab visibility: a backgrounded page also pauses the timer.
   const [pageVisible, setPageVisible] = useState(
     typeof document === 'undefined' ? true : document.visibilityState === 'visible',
@@ -177,15 +191,60 @@ export default function TextEditor({
     if (mountedRef.current) setIsFinishing(false);
   }
 
-  /** ← BACK: flush pending edits, then return to the mode landing. */
-  async function handleBack() {
+  /** True when there's an active session worth protecting on the way out. */
+  const hasActiveSession = metrics.hasStarted || text !== lastSavedTextRef.current;
+
+  /**
+   * ← BACK: if an active session exists, open the confirmation modal so the
+   * user doesn't lose their writing. Otherwise leave immediately.
+   */
+  function handleBack() {
     if (!onBack) return;
+    if (hasActiveSession) {
+      setLeaveStage('confirm');
+      return;
+    }
+    onBack();
+  }
+
+  /** Modal: FINISH & SAVE — same as the Finish Session action. */
+  async function handleConfirmFinish() {
+    setLeaveStage('closed');
+    await handleFinish();
+  }
+
+  /**
+   * Modal: DISCARD — the document edits are still saved to Drive (so the
+   * user's writing isn't lost); only the Jolt session metrics are dropped.
+   * Flush any pending save, resolve the folder name, then show the
+   * "saved to Drive" confirmation. Navigation waits for the OK button.
+   */
+  async function handleDiscard() {
+    setDiscardBusy(true);
+    // Stop the timer: the session tracking is being discarded.
+    metrics.finish();
     if (debounceRef.current !== null) {
       window.clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
+    // Make sure the actual writing is persisted before leaving.
     await saveNow();
-    onBack();
+    if (loadFolderName) {
+      try {
+        setDiscardFolderName(await loadFolderName(doc.id));
+      } catch {
+        setDiscardFolderName('My Drive');
+      }
+    }
+    if (!mountedRef.current) return;
+    setDiscardBusy(false);
+    setLeaveStage('discarded');
+  }
+
+  /** Post-discard OK: close the popup and complete the navigation back. */
+  function handleDiscardedOk() {
+    setLeaveStage('closed');
+    onBack?.();
   }
 
   const statusLabel: Record<SaveStatus, string> = {
@@ -203,46 +262,40 @@ export default function TextEditor({
     error: 'text-red-600',
   };
 
-  return (
-    <div className="flex flex-col gap-6">
-      {onBack && (
-        <button
-          type="button"
-          onClick={() => void handleBack()}
-          className="self-start rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
-        >
-          ← Back
-        </button>
-      )}
+  const saveStatusNode = (
+    <span
+      className={`whitespace-nowrap font-mono text-[10px] ${statusColor[saveStatus]}`}
+      aria-live="polite"
+    >
+      {statusLabel[saveStatus]}
+    </span>
+  );
 
-      <section className="flex min-h-[70vh] flex-col rounded-none border border-gray-300 bg-white text-black">
-      {/* Compact header: document name, save badge, Change Doc. */}
-      <header className="flex items-center justify-between gap-3 border-b border-gray-300 px-3 py-2">
-        <div className="flex min-w-0 flex-col">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
-            Editing
-          </span>
-          <span className="truncate text-sm font-semibold text-black">{doc.name}</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span
-            className={`whitespace-nowrap font-mono text-[10px] ${statusColor[saveStatus]}`}
-            aria-live="polite"
-          >
-            {statusLabel[saveStatus]}
-          </span>
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Outer top row: ← BACK on the left; truncated doc title on the right. */}
+      <div className="flex items-center justify-between gap-2">
+        {onBack ? (
           <button
             type="button"
-            onClick={onChangeDoc}
-            className="whitespace-nowrap rounded-none border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-black transition hover:bg-gray-100"
+            onClick={handleBack}
+            className="shrink-0 rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
           >
-            Change Doc
+            ← Back
           </button>
-        </div>
-      </header>
+        ) : (
+          <span />
+        )}
 
-      {/* Live writing-session stats. */}
-      <EditorStatsBar metrics={metrics} />
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate text-sm font-semibold text-black">{doc.name}</span>
+        </div>
+      </div>
+
+      <section className="flex min-h-[70vh] flex-col rounded-none border border-gray-300 bg-white text-black">
+      {/* Inner top row: live writing-session stats with the save status in
+          the top-right corner, all aligned on one row. */}
+      <EditorStatsBar metrics={metrics} statusSlot={saveStatusNode} />
 
       {error && (
         <p className="border-b border-gray-300 px-3 py-2 text-xs text-red-600" aria-live="polite">
@@ -272,6 +325,18 @@ export default function TextEditor({
         </button>
       </div>
       </section>
+
+      {leaveStage !== 'closed' && (
+        <LeaveSessionModal
+          stage={leaveStage}
+          isBusy={isFinishing || discardBusy}
+          folderName={discardFolderName}
+          onFinishAndSave={() => void handleConfirmFinish()}
+          onDiscard={() => void handleDiscard()}
+          onDiscardedOk={handleDiscardedOk}
+          onDismiss={() => setLeaveStage('closed')}
+        />
+      )}
     </div>
   );
 }

@@ -3,8 +3,6 @@ import type { TranscriptionSource } from '../services/transcription';
 interface TranscriptionStatusProps {
   /** True while a transcription (Drive or Tesseract) is running. */
   isTranscribing: boolean;
-  /** Link to the generated Google Doc, when the Drive path succeeded. */
-  docLink: string | null;
   /** Which engine produced the current text, or null if none yet. */
   source: TranscriptionSource | null;
   /** Error from the last transcription attempt, if any. */
@@ -22,7 +20,6 @@ interface TranscriptionStatusProps {
  */
 export default function TranscriptionStatus({
   isTranscribing,
-  docLink,
   source,
   error,
   canOfflineFallback,
@@ -34,17 +31,6 @@ export default function TranscriptionStatus({
         <p className="text-sm text-indigo-300" aria-live="polite">
           Transcribing handwriting via Google Drive…
         </p>
-      )}
-
-      {!isTranscribing && source === 'google-drive' && docLink && (
-        <a
-          href={docLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm font-semibold text-emerald-300 underline underline-offset-2 hover:text-emerald-100"
-        >
-          Open Created Google Doc ↗
-        </a>
       )}
 
       {!isTranscribing && source === 'tesseract' && (

@@ -9,8 +9,9 @@ import { countWords } from '../utils/text';
  *  - Run a 1s active-duration timer that pauses when the editor tab is
  *    inactive or the user has been idle for more than IDLE_TIMEOUT_MS.
  *  - Track net session words (current - initial, floored at 0).
- *  - Split active seconds into Drafting vs. Editing buckets using a short
- *    "editing-state" window opened by deletions / mid-text edits.
+ *  - Split active seconds into Drafting (within TYPING_WINDOW_MS of a
+ *    keystroke) vs. Editing (active but not actively typing: reading /
+ *    reviewing / pausing before the idle pause).
  *  - Derive Flow metrics: overall WPH and a sliding-window peak (highest WPH).
  *
  * The hook is pure React state + timers; the editor feeds it text changes via
@@ -19,8 +20,12 @@ import { countWords } from '../utils/text';
 
 /** Idle longer than this (ms) pauses the active timer. */
 const IDLE_TIMEOUT_MS = 45_000;
-/** How long (ms) a deletion / mid-text edit keeps the session in "editing". */
-const EDITING_WINDOW_MS = 4_000;
+/**
+ * A tick within this long (ms) of the last keystroke counts as Drafting
+ * (actively typing); active ticks beyond it count as Editing (on the document
+ * but not typing — reading / reviewing / pausing).
+ */
+const TYPING_WINDOW_MS = 2_000;
 /** Sliding window (seconds) used for the burst / highest-WPH calculation. */
 const BURST_WINDOW_SECONDS = 30;
 /** Minimum active seconds before overall WPH is reported (avoids early noise). */
@@ -81,8 +86,8 @@ export function useWritingSession(
   const [sessionStartTime, setSessionStartTime] = useState('');
   const [sessionStartTimestamp, setSessionStartTimestamp] = useState<number | null>(null);
   const [activeSeconds, setActiveSeconds] = useState(0);
+  // Only Drafting seconds are tracked; Editing = activeSeconds - draftingSeconds.
   const [draftingSeconds, setDraftingSeconds] = useState(0);
-  const [editingSeconds, setEditingSeconds] = useState(0);
   const [highestWph, setHighestWph] = useState(0);
   const [isFinished, setIsFinished] = useState(false);
 
@@ -93,9 +98,7 @@ export function useWritingSession(
   const activeRef = useRef(active);
   const hasStartedRef = useRef(false);
   const finishedRef = useRef(false);
-  // When > now, the session is in the post-deletion "editing" window.
-  const editingUntilRef = useRef(0);
-  // Previous text, to classify the next change as drafting vs. editing.
+  // Previous text, kept only to seed cleanly before the first edit.
   const prevTextRef = useRef(text);
   const sessionWordsRef = useRef(sessionWords);
   // Rolling samples of (timestamp, net words) for the burst calculation.
@@ -119,14 +122,16 @@ export function useWritingSession(
   }, []);
 
   const recordChange = useCallback(
-    (nextText: string, caret: number) => {
+    // `caret` is accepted for call-site compatibility but no longer used:
+    // every keystroke now simply marks the moment of typing (lastEditAtRef),
+    // and the tick decides Drafting vs. Editing from how recent that was.
+    (nextText: string, _caret: number) => {
       // Session already finished: keep prev text in sync but don't resume.
       if (finishedRef.current) {
         prevTextRef.current = nextText;
         return;
       }
       const now = Date.now();
-      const prev = prevTextRef.current;
 
       // First edit: start the session clock.
       if (!hasStartedRef.current) {
@@ -139,22 +144,9 @@ export function useWritingSession(
         samplesRef.current = [{ t: now, words: 0 }];
       }
 
+      // Mark this keystroke: it keeps the session in "drafting" for the next
+      // TYPING_WINDOW_MS and resets the idle-pause countdown.
       lastEditAtRef.current = now;
-
-      // Classify the edit. Deleting text, or editing anywhere other than the
-      // very end of the document (caret not at the tail / text got shorter),
-      // opens/extends the editing-state window. A pure forward append leaves
-      // the session in drafting unless the window is still open.
-      const isDeletion = nextText.length < prev.length;
-      const isForwardAppend =
-        nextText.length > prev.length &&
-        caret === nextText.length &&
-        nextText.startsWith(prev);
-
-      if (isDeletion || !isForwardAppend) {
-        editingUntilRef.current = now + EDITING_WINDOW_MS;
-      }
-
       prevTextRef.current = nextText;
     },
     [],
@@ -171,9 +163,10 @@ export function useWritingSession(
       if (finishedRef.current || !activeRef.current || idle) return;
 
       setActiveSeconds((s) => s + 1);
-      if (now < editingUntilRef.current) {
-        setEditingSeconds((s) => s + 1);
-      } else {
+      // Typed within the last TYPING_WINDOW_MS → Drafting. Otherwise the user
+      // is active on the doc but not typing, which falls into Editing via the
+      // activeSeconds - draftingSeconds remainder below.
+      if (now - lastEditAtRef.current <= TYPING_WINDOW_MS) {
         setDraftingSeconds((s) => s + 1);
       }
 
@@ -197,11 +190,12 @@ export function useWritingSession(
     return () => window.clearInterval(id);
   }, [hasStarted, isFinished]);
 
-  const trackedSeconds = draftingSeconds + editingSeconds;
+  // Drafting as a share of all active time; Editing is the remainder.
+  // Defaults to 0 / 0 before any active second has accrued.
   let draftingPct = 0;
   let editingPct = 0;
-  if (trackedSeconds > 0) {
-    draftingPct = Math.round((draftingSeconds / trackedSeconds) * 100);
+  if (activeSeconds > 0) {
+    draftingPct = Math.round((draftingSeconds / activeSeconds) * 100);
     editingPct = 100 - draftingPct;
   }
 

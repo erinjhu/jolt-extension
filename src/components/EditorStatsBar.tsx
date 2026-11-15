@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { WritingSessionMetrics } from '../hooks/useWritingSession';
 
 /**
@@ -8,6 +8,11 @@ import type { WritingSessionMetrics } from '../hooks/useWritingSession';
  */
 interface EditorStatsBarProps {
   metrics: WritingSessionMetrics;
+  /**
+   * Optional node rendered in the top-right of the headline row (used for the
+   * editor's "Saved to Drive" / "Saving…" save-status indicator).
+   */
+  statusSlot?: ReactNode;
 }
 
 /** Format whole seconds as MM:SS. */
@@ -17,7 +22,7 @@ function formatClock(totalSeconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export default function EditorStatsBar({ metrics }: EditorStatsBarProps) {
+export default function EditorStatsBar({ metrics, statusSlot }: EditorStatsBarProps) {
   const [expanded, setExpanded] = useState(false);
   const {
     sessionWords,
@@ -45,6 +50,10 @@ export default function EditorStatsBar({ metrics }: EditorStatsBarProps) {
           <span className="text-[9px] font-bold uppercase tracking-wide text-gray-500">Pace</span>
           <span className="font-semibold">{overallWph} wph</span>
         </div>
+        {/* Save-status indicator in the top-right corner of the stats row. */}
+        {statusSlot && (
+          <div className="flex items-center px-3 py-1.5">{statusSlot}</div>
+        )}
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
