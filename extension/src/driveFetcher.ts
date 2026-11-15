@@ -184,6 +184,7 @@ function validatePayload(raw: unknown): JoltSessionPayload {
     id,
     title: str('title'),
     description: str('description'),
+    ocrText: optionalStr('ocrText'),
     quote: optionalStr('quote'),
     date: optionalStr('date'),
     startTime: str('startTime'),

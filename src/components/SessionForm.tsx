@@ -1,113 +1,171 @@
-import { useEffect, useMemo, useState, type FocusEvent, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useState, type FocusEvent, type FormEvent } from 'react';
 import type { JoltSessionPayload, SessionVisibility } from '../types/session';
-import { calculateDuration, combineDateAndTime, toIsoString } from '../utils/duration';
+import { combineDateAndTime, toIsoString } from '../utils/duration';
 import { countWords } from '../utils/text';
 import {
   defaultSessionTitle,
   toDateInputValue,
   toTimeInputValue,
 } from '../utils/sessionDefaults';
+import type { WritingSessionMetrics } from '../hooks/useWritingSession';
 import { JOLT_DOCUMENTS } from '../data/documents';
 import type { TranscriptionSource } from '../services/transcription';
-import FormField from './FormField';
-import SessionMetaFields from './SessionMetaFields';
+import PhotoCapture from './PhotoCapture';
 import TranscriptionStatus from './TranscriptionStatus';
-import VisibilityToggle from './VisibilityToggle';
+import {
+  JoltField,
+  JoltLabel,
+  JoltSectionHeader,
+  joltInputClass,
+  joltSingleLineClass,
+} from './jolt/JoltField';
+import JoltSessionStats from './jolt/JoltSessionStats';
+import JoltVisibilityToggle from './jolt/JoltVisibilityToggle';
 
 interface SessionFormProps {
   /** OCR-extracted text used to pre-fill the description and word count. */
   initialDescription: string;
-  /** Base64 image attached to the session payload. */
+  /** Base64 image attached to the session payload ('' until captured). */
   imageBase64: string;
-  /** Placeholder callback invoked with the assembled payload. */
+  /** Pre-selected target document name (chosen on the landing screen). */
+  documentName?: string;
+  /**
+   * Drive file id of the active Google Doc. When present, a subtle "view
+   * document" link appears above the Quote field so the user can open the doc
+   * in a new tab to copy a quote. Omitted for photo-scan sessions.
+   */
+  documentId?: string;
+  /**
+   * Tracked analytics from a finished TEXT EDITOR session. When provided, the
+   * form seeds Words / Start Time / Duration from these values and shows a
+   * read-only WRITING MODES / FLOW summary. Absent for photo-scan sessions.
+   */
+  sessionMetrics?: WritingSessionMetrics | null;
+  /** Fires when a photo is captured/uploaded in the PHOTOS section. */
+  onImageSelected: (imageBase64: string) => void;
+  /** Returns to the mode-selection landing screen. */
+  onBack?: () => void;
+  /** Invoked with the assembled payload on submit. */
   onSyncToDrive: (payload: JoltSessionPayload) => void;
-  /** Disables the sync action while work is in progress. */
   disabled?: boolean;
-  /** Whether the user is signed in to Google; gates the sync action. */
   isSignedIn?: boolean;
-  /** True while the Drive sync is running; shows a loading label. */
   isSyncing?: boolean;
-  /** True while transcription (Drive or Tesseract) is running. */
   isTranscribing?: boolean;
-  /** Link to the Google Doc produced by Drive OCR, if any. */
-  transcriptionDocLink?: string | null;
-  /** Which engine produced the current transcription. */
   transcriptionSource?: TranscriptionSource | null;
-  /** Error from the last transcription attempt, if any. */
   transcribeError?: string | null;
-  /** Whether to offer the explicit offline (Tesseract) fallback. */
   canOfflineFallback?: boolean;
-  /** Triggers the offline fallback transcription. */
   onOfflineFallback?: () => void;
 }
-
-const inputClass =
-  'rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 outline-none focus:border-indigo-400';
 
 export default function SessionForm({
   initialDescription,
   imageBase64,
+  documentName = '',
+  documentId,
+  sessionMetrics = null,
+  onImageSelected,
+  onBack,
   onSyncToDrive,
   disabled = false,
   isSignedIn = true,
   isSyncing = false,
   isTranscribing = false,
-  transcriptionDocLink = null,
   transcriptionSource = null,
   transcribeError = null,
   canOfflineFallback = false,
   onOfflineFallback,
 }: SessionFormProps) {
+  const quoteFieldId = useId();
   const now = useMemo(() => new Date(), []);
-  const [title, setTitle] = useState(() => defaultSessionTitle(now));
-  const [date, setDate] = useState(() => toDateInputValue(now));
-  const [startTime, setStartTime] = useState(() => toTimeInputValue(now));
-  const [stopTime, setStopTime] = useState(() => toTimeInputValue(now));
-  const [targetDocumentName, setTargetDocumentName] = useState(JOLT_DOCUMENTS[0] ?? '');
-  const [visibility, setVisibility] = useState<SessionVisibility>('private');
-  const [description, setDescription] = useState(initialDescription);
-  const [quote, setQuote] = useState('');
-  const [wordCount, setWordCount] = useState(() => countWords(initialDescription));
-
-  const startDateTime = combineDateAndTime(date, startTime);
-  const stopDateTime = combineDateAndTime(date, stopTime);
-  const duration = useMemo(
-    () => calculateDuration(startDateTime, stopDateTime),
-    [startDateTime, stopDateTime],
+  // A finished editor session's start time anchors Date / Start Time; fall
+  // back to "now" for photo-scan sessions with no tracked start.
+  const startDate = useMemo(
+    () =>
+      sessionMetrics?.sessionStartTimestamp != null
+        ? new Date(sessionMetrics.sessionStartTimestamp)
+        : now,
+    [sessionMetrics?.sessionStartTimestamp, now],
   );
+  // Active seconds split into whole hours + rounded minutes for the Duration
+  // inputs (defaults to the usual 0h 15m when there are no tracked metrics).
+  const trackedDuration = useMemo(() => {
+    const secs = sessionMetrics?.activeSeconds ?? 0;
+    if (!sessionMetrics || secs <= 0) return { hours: 0, minutes: 15 };
+    return { hours: Math.floor(secs / 3600), minutes: Math.round((secs % 3600) / 60) };
+  }, [sessionMetrics]);
 
-  /** Select the whole title so an edit replaces the default in one keystroke. */
-  function selectAllTitle(event: FocusEvent<HTMLInputElement>) {
+  const [title, setTitle] = useState(() => defaultSessionTitle(now));
+  const [date, setDate] = useState(() => toDateInputValue(startDate));
+  const [startTime, setStartTime] = useState(() => toTimeInputValue(startDate));
+  const [targetDocumentName, setTargetDocumentName] = useState(
+    documentName || JOLT_DOCUMENTS[0] || '',
+  );
+  // Include the landing-chosen document in the dropdown if it's not a preset.
+  const documentOptions = useMemo(
+    () =>
+      documentName && !JOLT_DOCUMENTS.includes(documentName)
+        ? [documentName, ...JOLT_DOCUMENTS]
+        : [...JOLT_DOCUMENTS],
+    [documentName],
+  );
+  const [visibility, setVisibility] = useState<SessionVisibility>('private');
+  // Description stays BLANK by default — the OCR text goes to the Google Doc,
+  // not into this editable field. The user types notes here only if they want.
+  const [description, setDescription] = useState('');
+  const [quote, setQuote] = useState('');
+  // Words seed: tracked net words from the editor session when present,
+  // otherwise the transcribed OCR text's word count.
+  const [wordCount, setWordCount] = useState(() =>
+    sessionMetrics ? sessionMetrics.sessionWords : countWords(initialDescription),
+  );
+  const [durationHours, setDurationHours] = useState(trackedDuration.hours);
+  const [durationMinutes, setDurationMinutes] = useState(trackedDuration.minutes);
+
+  // For photo-scan sessions the WORDS stat is auto-calculated from the
+  // transcribed text, which arrives after mount (async OCR). Editor sessions
+  // keep their tracked word count untouched.
+  useEffect(() => {
+    if (!sessionMetrics) setWordCount(countWords(initialDescription));
+  }, [initialDescription, sessionMetrics]);
+
+  function selectAll(event: FocusEvent<HTMLInputElement>) {
     event.target.select();
   }
 
-  // Transcription text can arrive after mount (async Drive/Tesseract OCR).
-  // Pull it into the editable notes and word count when it changes.
-  useEffect(() => {
-    if (initialDescription) {
-      setDescription(initialDescription);
-      setWordCount(countWords(initialDescription));
-    }
-  }, [initialDescription]);
+  /** Open the active Google Doc in a new tab so the user can copy a quote. */
+  function openDocInNewTab() {
+    if (!documentId) return;
+    window.open(
+      `https://docs.google.com/document/d/${documentId}/edit`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  }
 
-  /** Edit the notes and keep the word count in sync (still manually overridable). */
+
+  // Description is the user's manual notes; it no longer drives the word
+  // count (WORDS comes from the OCR text, still manually overridable).
   function handleDescriptionChange(value: string) {
     setDescription(value);
-    setWordCount(countWords(value));
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Start is date + start time; stop is start plus the entered duration.
+    const startIso = toIsoString(combineDateAndTime(date, startTime));
+    const startMs = startIso ? new Date(startIso).getTime() : Date.now();
+    const stopMs = startMs + (durationHours * 60 + durationMinutes) * 60_000;
     onSyncToDrive({
       id: crypto.randomUUID(),
       title,
       description,
+      ocrText: initialDescription,
       quote,
       date,
-      startTime: toIsoString(startDateTime),
-      stopTime: toIsoString(stopDateTime),
-      durationHours: duration.hours,
-      durationMinutes: duration.minutes,
+      startTime: startIso,
+      stopTime: new Date(stopMs).toISOString(),
+      durationHours,
+      durationMinutes,
       wordCount,
       visibility,
       targetDocumentName,
@@ -117,99 +175,159 @@ export default function SessionForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <FormField label="Title">
-        {(id) => (
-          <input
-            id={id}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onFocus={selectAllTitle}
-            className={inputClass}
-            required
-          />
-        )}
-      </FormField>
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-6 rounded-none border border-gray-300 bg-white p-6 text-black"
+    >
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          className="self-start rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
+        >
+          ← Back
+        </button>
+      )}
 
-      <FormField label="Document">
-        {(id) => (
-          <select
-            id={id}
-            value={targetDocumentName}
-            onChange={(e) => setTargetDocumentName(e.target.value)}
-            className={inputClass}
-          >
-            {JOLT_DOCUMENTS.map((doc) => (
-              <option key={doc} value={doc}>
-                {doc}
-              </option>
-            ))}
-          </select>
-        )}
-      </FormField>
+      <div className="flex flex-col gap-4">
+        <h1 className="text-sm font-bold uppercase tracking-wide">Add Manual Session</h1>
 
-      <SessionMetaFields
-        date={date}
-        onDateChange={setDate}
-        wordCount={wordCount}
-        onWordCountChange={setWordCount}
-        startTime={startTime}
-        onStartTimeChange={setStartTime}
-        stopTime={stopTime}
-        onStopTimeChange={setStopTime}
-        inputClass={inputClass}
-      />
+        {/* Date stays compact (auto width); Document expands to fill the row. */}
+        <div className="grid grid-cols-[auto_1fr] gap-3">
+          <JoltField label="Date">
+            {(id) => (
+              <input
+                id={id}
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className={joltSingleLineClass}
+              />
+            )}
+          </JoltField>
 
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-400" aria-live="polite">
-          Duration: {duration.hours}h {duration.minutes}m
-        </span>
-        <VisibilityToggle value={visibility} onChange={setVisibility} />
+          <JoltField label="Document">
+            {(id) => (
+              <div className="flex flex-col gap-1">
+                <select
+                  id={id}
+                  value={targetDocumentName}
+                  onChange={(e) => setTargetDocumentName(e.target.value)}
+                  className={joltSingleLineClass}
+                >
+                  {documentOptions.map((doc) => (
+                    <option key={doc} value={doc}>
+                      {doc}
+                    </option>
+                  ))}
+                </select>
+                <span className="font-mono text-xs text-gray-500">+ Create new document</span>
+              </div>
+            )}
+          </JoltField>
+        </div>
       </div>
 
-      <TranscriptionStatus
-        isTranscribing={isTranscribing}
-        docLink={transcriptionDocLink}
-        source={transcriptionSource}
-        error={transcribeError}
-        canOfflineFallback={canOfflineFallback}
-        onOfflineFallback={() => onOfflineFallback?.()}
-      />
+      <div className="flex flex-col gap-3">
+        <JoltSectionHeader>Session Stats</JoltSectionHeader>
+        <JoltSessionStats
+          words={wordCount}
+          onWordsChange={setWordCount}
+          startTime={startTime}
+          onStartTimeChange={setStartTime}
+          durationHours={durationHours}
+          durationMinutes={durationMinutes}
+          onHoursChange={setDurationHours}
+          onMinutesChange={setDurationMinutes}
+        />
+      </div>
 
-      <FormField label="Description">
-        {(id) => (
+      {sessionMetrics && (
+        <div className="flex flex-col gap-3">
+          <JoltSectionHeader>Flow</JoltSectionHeader>
+          <div className="flex justify-between font-mono text-xs text-gray-600">
+            <span>Overall {sessionMetrics.overallWph} wph</span>
+            <span>Highest {sessionMetrics.highestWph} wph</span>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 border-b border-gray-200 pb-6">
+        <JoltSectionHeader>Visibility</JoltSectionHeader>
+        <JoltVisibilityToggle value={visibility} onChange={setVisibility} />
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <JoltSectionHeader>Optional</JoltSectionHeader>
+
+        <JoltField label="Title">
+          {(id) => (
+            <input
+              id={id}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onFocus={selectAll}
+              className={joltSingleLineClass}
+              placeholder="Name your session"
+              required
+            />
+          )}
+        </JoltField>
+
+        <JoltField label="Description">
+          {(id) => (
+            <textarea
+              id={id}
+              value={description}
+              onChange={(e) => handleDescriptionChange(e.target.value)}
+              className={`${joltInputClass} min-h-28 resize-y py-1.5`}
+              placeholder="How did it go?"
+            />
+          )}
+        </JoltField>
+
+        <TranscriptionStatus
+          source={transcriptionSource}
+          error={transcribeError}
+          canOfflineFallback={canOfflineFallback}
+          onOfflineFallback={() => onOfflineFallback?.()}
+        />
+
+        <div className="flex flex-col gap-2">
+          {/* Quote label and the (shared) open-doc action on one row. */}
+          <div className="flex items-center justify-between gap-2">
+            <JoltLabel htmlFor={quoteFieldId}>Quote</JoltLabel>
+            {documentId && (
+              <button
+                type="button"
+                onClick={openDocInNewTab}
+                className="shrink-0 rounded-none border border-[#111111] bg-[#FFFFFF] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
+              >
+                Open your doc to find quote ↗
+              </button>
+            )}
+          </div>
           <textarea
-            id={id}
-            value={description}
-            onChange={(e) => handleDescriptionChange(e.target.value)}
-            className={`${inputClass} min-h-40 resize-y`}
-            placeholder="Extracted text appears here. Edit as needed."
-          />
-        )}
-      </FormField>
-
-      <FormField label="Quote">
-        {(id) => (
-          <input
-            id={id}
+            id={quoteFieldId}
             value={quote}
             onChange={(e) => setQuote(e.target.value)}
-            className={inputClass}
-            placeholder="A line worth remembering"
+            className={`${joltInputClass} min-h-28 resize-y py-1.5 font-mono`}
+            placeholder="Share a favorite line from your writing..."
           />
-        )}
-      </FormField>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-bold uppercase tracking-wide text-black">Photos</span>
+          <PhotoCapture onImageSelected={onImageSelected} disabled={isTranscribing} />
+        </div>
+      </div>
 
       <button
         type="submit"
         disabled={disabled || !isSignedIn}
-        className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-none bg-black px-4 py-3 text-sm font-bold uppercase tracking-wide text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {!isSignedIn
-          ? 'Sign in to Google to sync'
-          : isSyncing
-            ? 'Syncing to Jolt…'
-            : 'Sync to Jolt'}
+        {!isSignedIn ? 'Sign in to Google to sync' : isSyncing ? 'Syncing…' : 'Sync to Jolt'}
       </button>
     </form>
   );

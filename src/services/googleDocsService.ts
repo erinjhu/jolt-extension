@@ -10,6 +10,7 @@
 const UPLOAD_URL =
   'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink';
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
+const DRIVE_UPLOAD_FILES_URL = 'https://www.googleapis.com/upload/drive/v3/files';
 const DOC_MIME = 'application/vnd.google-apps.document';
 
 /** Metadata returned for a freshly created Google Doc. */
@@ -86,6 +87,107 @@ function cleanExportedText(raw: string): string {
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
     .trim();
+}
+
+/**
+ * Fetch the current plain-text content of an existing Google Doc by exporting
+ * it through the Drive API (`GET /drive/v3/files/{fileId}/export`). The export
+ * path works under the `drive.file` scope for docs this app created or that
+ * the user granted via the Picker, which is why we prefer it over the broader
+ * Docs API (`documents.get`).
+ *
+ * @param accessToken OAuth token with the `drive.file` scope.
+ * @param fileId      The Google Doc's Drive file id.
+ * @returns The document's plain text, cleaned of BOM / carriage-return noise.
+ */
+export async function fetchDocumentText(
+  accessToken: string,
+  fileId: string,
+): Promise<string> {
+  const exportUrl = `${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}/export?mimeType=text/plain`;
+  const res = await fetch(exportUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Could not load the document text (HTTP ${res.status}).`);
+  }
+  return cleanExportedText(await res.text());
+}
+
+/**
+ * Resolve the human-readable name of the Drive folder a document lives in.
+ *
+ * Looks up the file's `parents`, then fetches that parent's `name`. Falls back
+ * cleanly to `"My Drive"` when the file has no parent (root), when the parent
+ * lookup is denied/unavailable under `drive.file`, or on any error — so the
+ * caller always gets a usable label and never has to handle a throw.
+ *
+ * @param accessToken OAuth token with the `drive.file` scope.
+ * @param fileId      The Google Doc's Drive file id.
+ * @returns The parent folder's name, or `"My Drive"` as a safe default.
+ */
+export async function fetchDocumentFolderName(
+  accessToken: string,
+  fileId: string,
+): Promise<string> {
+  const DEFAULT_FOLDER = 'My Drive';
+  try {
+    const fileRes = await fetch(
+      `${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}?fields=parents`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!fileRes.ok) return DEFAULT_FOLDER;
+
+    const { parents } = (await fileRes.json()) as { parents?: string[] };
+    const parentId = parents?.[0];
+    if (!parentId) return DEFAULT_FOLDER;
+
+    const parentRes = await fetch(
+      `${DRIVE_FILES_URL}/${encodeURIComponent(parentId)}?fields=name`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!parentRes.ok) return DEFAULT_FOLDER;
+
+    const { name } = (await parentRes.json()) as { name?: string };
+    return name?.trim() || DEFAULT_FOLDER;
+  } catch {
+    return DEFAULT_FOLDER;
+  }
+}
+
+/**
+ * Overwrite the full text of an existing Google Doc by uploading new
+ * `text/plain` content through the Drive media-update endpoint
+ * (`PATCH /upload/drive/v3/files/{fileId}?uploadType=media`). Drive re-converts
+ * the plain text into the document's body, replacing the previous content.
+ *
+ * This uses the Drive API (same as the editor's read/export path) rather than
+ * the Google Docs API. The `drive.file` scope authorizes it for docs this app
+ * created or that the user granted via the Picker, and it does not require the
+ * separate Google Docs API to be enabled on the Cloud project — which is what
+ * previously produced an HTTP 403 on `docs.googleapis.com`.
+ *
+ * @param accessToken OAuth token with the `drive.file` scope.
+ * @param documentId  The Google Doc's Drive file id.
+ * @param newText     The full plain text the document should contain.
+ */
+export async function saveDocumentText(
+  accessToken: string,
+  documentId: string,
+  newText: string,
+): Promise<void> {
+  const updateUrl = `${DRIVE_UPLOAD_FILES_URL}/${encodeURIComponent(documentId)}?uploadType=media`;
+  const res = await fetch(updateUrl, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'text/plain; charset=UTF-8',
+    },
+    body: newText,
+  });
+  if (!res.ok) {
+    throw new Error(`Could not save the document (HTTP ${res.status}).`);
+  }
 }
 
 /**

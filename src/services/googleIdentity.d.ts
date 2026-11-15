@@ -42,6 +42,11 @@ declare global {
       accounts: {
         oauth2: GoogleOauth2;
       };
+      /** Picker API namespace, present once the gapi picker module loads. */
+      picker?: GooglePickerNamespace;
+    };
+    gapi?: {
+      load: (module: string, config: { callback: () => void }) => void;
     };
   }
 }
