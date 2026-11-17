@@ -1,38 +1,22 @@
 /**
- * Resolves and persists the Google OAuth client ID. The build-time value
- * comes from `VITE_GOOGLE_CLIENT_ID`; a user-supplied override is stored in
- * `localStorage` so a client ID can be tested without rebuilding the app.
+ * Resolves the Google OAuth client ID from the deployment environment. The
+ * value is baked in at build time via `VITE_GOOGLE_CLIENT_ID`; users never
+ * enter or configure it. An optional hardcoded fallback can be set below for
+ * deployments that don't inject the env var.
  */
 
-const STORAGE_KEY = 'jolt.googleClientId';
+/** Optional hardcoded fallback for deployments without an injected env var. */
+const FALLBACK_CLIENT_ID = '';
 
-/** Client ID baked in at build time via Vite env, or empty if unset. */
+/** Client ID from the build-time Vite env, trimmed. */
 const envClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '').trim();
 
-/** Returns the saved override from localStorage, or empty string. */
-export function getStoredClientId(): string {
-  try {
-    return localStorage.getItem(STORAGE_KEY)?.trim() ?? '';
-  } catch {
-    return '';
-  }
-}
-
-/** Persists (or clears, when blank) the user-supplied client ID override. */
-export function setStoredClientId(clientId: string): void {
-  const trimmed = clientId.trim();
-  try {
-    if (trimmed) {
-      localStorage.setItem(STORAGE_KEY, trimmed);
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  } catch {
-    // Ignore storage failures (e.g. private mode); env value still applies.
-  }
-}
-
-/** The effective client ID: a stored override wins over the env value. */
+/** The effective Google OAuth client ID for this build. */
 export function resolveClientId(): string {
-  return getStoredClientId() || envClientId;
+  return envClientId || FALLBACK_CLIENT_ID;
+}
+
+/** True when a client ID is available (env or fallback). */
+export function hasClientId(): boolean {
+  return Boolean(resolveClientId());
 }
