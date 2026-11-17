@@ -7,6 +7,8 @@ import PhotoUploadLanding from './components/PhotoUploadLanding';
 import ScanProgress from './components/ScanProgress';
 import SessionForm from './components/SessionForm';
 import SignInScreen from './components/SignInScreen';
+import PrivacyPage from './components/legal/PrivacyPage';
+import TermsPage from './components/legal/TermsPage';
 import SyncConfirmation from './components/SyncConfirmation';
 import SyncResultBanner from './components/SyncResultBanner';
 import TextEditor from './components/TextEditor';
@@ -17,6 +19,7 @@ import {
   type TranscriptionResult,
 } from './services/transcription';
 import { useGoogleAuth } from './hooks/useGoogleAuth';
+import { useHashRoute } from './hooks/useHashRoute';
 import { defaultSessionTitle } from './utils/sessionDefaults';
 import { silentRefresh } from './services/googleAuth';
 import {
@@ -34,6 +37,7 @@ import type { JoltSessionPayload } from './types/session';
  * signed in, Tesseract offline otherwise), then review and sync the session.
  */
 export default function App() {
+  const route = useHashRoute();
   const [flowKey, setFlowKey] = useState(0);
   const [imageBase64, setImageBase64] = useState('');
   const [selectedDoc, setSelectedDoc] = useState<TargetDoc | null>(null);
@@ -285,6 +289,11 @@ export default function App() {
 
   const isSynced = Boolean(syncedDoc);
   const hasImage = Boolean(imageBase64);
+
+  // Public legal pages: reachable without sign-in (and before session restore)
+  // so Google OAuth reviewers and users can open them directly.
+  if (route === '/privacy') return <PrivacyPage />;
+  if (route === '/terms') return <TermsPage />;
 
   // Strict auth gate. Nothing else renders until there is a valid session.
   if (isRestoring) {
