@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GoogleUser } from '../services/googleAuth';
 import ProfileAvatar from './ProfileAvatar';
+import JoltLogoIcon from './jolt/JoltLogoIcon';
 
 interface AppHeaderProps {
   user: GoogleUser;
@@ -52,7 +53,10 @@ export default function AppHeader({
   return (
     <header className="sticky top-0 z-30 border-b border-[#111111] bg-[#FFFFFF] text-[#111111]">
       <div className="mx-auto flex h-14 max-w-xl items-center justify-between px-4">
-        <span className="pl-[0.35em] text-lg font-bold tracking-[0.35em]">JOLT</span>
+        <span className="flex items-center gap-2">
+          <JoltLogoIcon size={24} title="Jolt" />
+          <span className="pl-[0.35em] text-lg font-bold tracking-[0.35em]">JOLT</span>
+        </span>
 
         <div ref={containerRef} className="relative">
           <button

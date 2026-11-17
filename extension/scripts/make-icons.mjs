@@ -1,8 +1,10 @@
 /**
- * Generates simple PNG icons (indigo square + white lightning bolt) at the
- * sizes Chrome expects, writing them to `public/icons/`. Pure Node, no deps:
- * we hand-roll a minimal PNG encoder (RGBA, no compression filters beyond
- * zlib's stored/deflate via zlib).
+ * Generates the extension's PNG icons at the sizes Chrome expects (16/48/128),
+ * writing them to `public/icons/`. Each icon is the Jolt brand mark: 8 slanted
+ * horizontal purple bars forming a lightning "Z" on a 100×100 grid, leaning
+ * forward via a uniform skewX(-12), on a transparent background. Pure Node, no
+ * deps — we hand-roll a minimal RGBA PNG encoder and rasterize the same
+ * geometry used by the SVG favicon and the JoltLogoIcon component.
  */
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -13,8 +15,37 @@ const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, '..', 'public', 'icons');
 mkdirSync(outDir, { recursive: true });
 
-const ACCENT = [79, 70, 229, 255]; // indigo
-const WHITE = [255, 255, 255, 255];
+const PURPLE = [79, 70, 229, 255]; // #4F46E5 — Jolt brand purple
+const TRANSPARENT = [0, 0, 0, 0];
+
+// Mark geometry on a 100×100 grid, matching public/favicon.svg.
+const GRID = 100;
+const BAR_HEIGHT = 7;
+// skewX(-12deg): a point (x, y) renders at (x + SKEW * y, y).
+const SKEW = Math.tan((12 * Math.PI) / 180);
+
+// [x1, x2, y] per bar, top to bottom (width is x2 - x1).
+const BARS = [
+  [73, 83, 8],
+  [58, 76, 20],
+  [40, 67, 32],
+  [25, 60, 44],
+  [47, 82, 56],
+  [40, 67, 68],
+  [31, 49, 80],
+  [24, 34, 92],
+];
+
+/**
+ * Returns true when grid point (gx, gy) falls inside the given bar after the
+ * shared skewX(-12) shear. We un-skew the x coordinate, then test the upright
+ * rectangle.
+ */
+function inBar(gx, gy, [x1, x2, y]) {
+  if (gy < y || gy > y + BAR_HEIGHT) return false;
+  const designX = gx - SKEW * gy;
+  return designX >= x1 && designX <= x2;
+}
 
 function crc32(buf) {
   let c = ~0;
@@ -34,42 +65,31 @@ function chunk(type, data) {
   return Buffer.concat([lenBuf, typeBuf, data, crcBuf]);
 }
 
-// A normalized lightning-bolt polygon in a 0..1 coordinate space.
-const BOLT = [
-  [0.58, 0.1],
-  [0.3, 0.55],
-  [0.47, 0.55],
-  [0.4, 0.9],
-  [0.72, 0.42],
-  [0.53, 0.42],
-];
-
-function pointInPoly(x, y, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i];
-    const [xj, yj] = poly[j];
-    const intersect =
-      yi > y !== yj > y &&
-      x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
+/**
+ * Samples each output pixel with a small supersampling grid for smoother edges,
+ * blending the purple fill against transparency by coverage.
+ */
 function makePng(size) {
   const raw = Buffer.alloc(size * (size * 4 + 1));
-  for (let y = 0; y < size; y += 1) {
-    raw[y * (size * 4 + 1)] = 0; // filter byte: none
-    for (let x = 0; x < size; x += 1) {
-      const nx = x / size;
-      const ny = y / size;
-      const color = pointInPoly(nx, ny, BOLT) ? WHITE : ACCENT;
-      const off = y * (size * 4 + 1) + 1 + x * 4;
+  const SS = 3; // samples per axis
+  for (let py = 0; py < size; py += 1) {
+    raw[py * (size * 4 + 1)] = 0; // filter byte: none
+    for (let px = 0; px < size; px += 1) {
+      let hits = 0;
+      for (let sy = 0; sy < SS; sy += 1) {
+        for (let sx = 0; sx < SS; sx += 1) {
+          const gx = ((px + (sx + 0.5) / SS) / size) * GRID;
+          const gy = ((py + (sy + 0.5) / SS) / size) * GRID;
+          if (BARS.some((bar) => inBar(gx, gy, bar))) hits += 1;
+        }
+      }
+      const coverage = hits / (SS * SS);
+      const color = coverage > 0 ? PURPLE : TRANSPARENT;
+      const off = py * (size * 4 + 1) + 1 + px * 4;
       raw[off] = color[0];
       raw[off + 1] = color[1];
       raw[off + 2] = color[2];
-      raw[off + 3] = color[3];
+      raw[off + 3] = Math.round(coverage * 255);
     }
   }
 
