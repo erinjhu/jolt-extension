@@ -47,6 +47,8 @@ interface TextEditorProps {
   onBack?: () => void;
   /** Finish the session: final metrics + text handed to the logging screen. */
   onFinish: (summary: { metrics: WritingSessionMetrics; text: string }) => void;
+  /** Guest demo: show "Saved locally (Demo)" instead of "Saved to Drive". */
+  isGuest?: boolean;
 }
 
 export default function TextEditor({
@@ -57,6 +59,7 @@ export default function TextEditor({
   isActive,
   onBack,
   onFinish,
+  isGuest = false,
 }: TextEditorProps) {
   const [text, setText] = useState('');
   const [initialWordCount, setInitialWordCount] = useState(0);
@@ -249,7 +252,7 @@ export default function TextEditor({
 
   const statusLabel: Record<SaveStatus, string> = {
     idle: '',
-    saved: 'Saved to Drive',
+    saved: isGuest ? 'Saved locally (Demo)' : 'Saved to Drive',
     saving: 'Saving…',
     unsaved: 'Unsaved changes',
     error: 'Save failed',

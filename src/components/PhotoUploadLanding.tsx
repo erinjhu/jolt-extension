@@ -19,6 +19,10 @@ interface PhotoUploadLandingProps {
   onClearDoc: () => void;
   onImageSelected: (imageBase64: string, doc: TargetDoc) => void;
   disabled?: boolean;
+  /** Guest demo mode: mock workspace, plus a "load sample note" shortcut. */
+  isGuest?: boolean;
+  /** Guest-only: load the bundled sample handwritten note for the demo. */
+  onLoadSampleNote?: () => void;
 }
 
 export default function PhotoUploadLanding({
@@ -28,6 +32,8 @@ export default function PhotoUploadLanding({
   onClearDoc,
   onImageSelected,
   disabled = false,
+  isGuest = false,
+  onLoadSampleNote,
 }: PhotoUploadLandingProps) {
   const cameraInputId = useId();
   const libraryInputId = useId();
@@ -61,6 +67,7 @@ export default function PhotoUploadLanding({
           accessToken={accessToken}
           selectedDoc={selectedDoc}
           onSelect={onSelectDoc}
+          isGuest={isGuest}
         />
       ) : (
         // Step 2: show the chosen doc (+ Change) and reveal the photo buttons.
@@ -118,6 +125,18 @@ export default function PhotoUploadLanding({
               onChange={handleFileChange}
               className="sr-only"
             />
+
+            {/* Guest demo: no camera handy? Load a bundled sample note. */}
+            {isGuest && onLoadSampleNote && (
+              <button
+                type="button"
+                onClick={onLoadSampleNote}
+                disabled={disabled}
+                className="w-full rounded-none border border-[#111111] bg-[#FFFFFF] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-40"
+              >
+                Load Sample Handwritten Note
+              </button>
+            )}
           </div>
         </div>
       )}

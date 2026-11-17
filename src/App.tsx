@@ -1,16 +1,13 @@
 import { useCallback, useState } from 'react';
 import AppHeader from './components/AppHeader';
 import type { AppTab } from './components/ModeToggle';
-import LeaveSessionModal from './components/LeaveSessionModal';
 import ModeSelectionLanding from './components/ModeSelectionLanding';
-import PhotoUploadLanding from './components/PhotoUploadLanding';
-import ScanProgress from './components/ScanProgress';
-import SessionForm from './components/SessionForm';
+import ScanTabView from './components/ScanTabView';
+import SessionLoggingView from './components/SessionLoggingView';
 import SignInScreen from './components/SignInScreen';
 import PrivacyPage from './components/legal/PrivacyPage';
 import TermsPage from './components/legal/TermsPage';
 import SyncConfirmation from './components/SyncConfirmation';
-import SyncResultBanner from './components/SyncResultBanner';
 import TextEditor from './components/TextEditor';
 import { syncSessionToDrive } from './services/syncSessionToDrive';
 import {
@@ -28,6 +25,16 @@ import {
   saveDocumentText,
   type CreatedDoc,
 } from './services/googleDocsService';
+import {
+  GUEST_USER,
+  guestFolderName,
+  guestLoadText,
+  guestSaveText,
+  guestSyncSession,
+  guestTranscribe,
+} from './services/guestDemoService';
+import { useGuestMode } from './hooks/useGuestMode';
+import GuestBadge from './components/GuestBadge';
 import type { WritingSessionMetrics } from './hooks/useWritingSession';
 import type { TargetDoc } from './services/joltDocumentsService';
 import type { JoltSessionPayload } from './types/session';
@@ -59,6 +66,13 @@ export default function App() {
     'closed',
   );
   const [scanDiscardFolder, setScanDiscardFolder] = useState('My Drive');
+  // Guest demo mode: no Google account, all Drive/Docs calls run in-memory.
+  // Owned by a dedicated hook; enter/exit reset the flow + mock workspace.
+  const { isGuestMode, showDocPreview, setShowDocPreview, enterGuestMode, exitGuestMode } =
+    useGuestMode(
+      () => resetFlow(),
+      () => setHasChosenInitialMode(false),
+    );
   const {
     user: googleUser,
     isRestoring,
@@ -72,7 +86,10 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncedDoc, setSyncedDoc] = useState<CreatedDoc | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const isSignedIn = Boolean(googleUser);
+  // The active user: a real Google account, or the synthetic guest in demo
+  // mode. Everything downstream (header, gate, "signed in" UI) keys off this.
+  const effectiveUser = isGuestMode ? GUEST_USER : googleUser;
+  const isSignedIn = Boolean(effectiveUser);
 
   /** Convert a data URL into a Blob for preprocessing / upload. */
   async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
@@ -120,25 +137,36 @@ export default function App() {
    * target doc changes, not on every App render.
    */
   const loadDocumentText = useCallback(
-    (fileId: string) => withTokenRetry((token) => fetchDocumentText(token, fileId)),
+    (fileId: string) =>
+      isGuestMode
+        ? Promise.resolve(guestLoadText(fileId))
+        : withTokenRetry((token) => fetchDocumentText(token, fileId)),
     // withTokenRetry closes over googleUser; re-create when the user changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [googleUser],
+    [googleUser, isGuestMode],
   );
 
-  /** Save editor text back to the Google Doc, token-retrying on a 401. */
+  /** Save editor text back to the Google Doc (or the mock doc in demo mode). */
   const saveDocumentTextFn = useCallback(
-    (fileId: string, newText: string) =>
-      withTokenRetry((token) => saveDocumentText(token, fileId, newText)),
+    (fileId: string, newText: string) => {
+      if (isGuestMode) {
+        guestSaveText(fileId, newText);
+        return Promise.resolve();
+      }
+      return withTokenRetry((token) => saveDocumentText(token, fileId, newText));
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [googleUser],
+    [googleUser, isGuestMode],
   );
 
-  /** Resolve the document's Drive folder name, token-retrying on a 401. */
+  /** Resolve the document's folder name (mock in demo mode). */
   const loadDocumentFolderName = useCallback(
-    (fileId: string) => withTokenRetry((token) => fetchDocumentFolderName(token, fileId)),
+    (fileId: string) =>
+      isGuestMode
+        ? Promise.resolve(guestFolderName())
+        : withTokenRetry((token) => fetchDocumentFolderName(token, fileId)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [googleUser],
+    [googleUser, isGuestMode],
   );
 
   /**
@@ -158,6 +186,19 @@ export default function App() {
     setTranscribeError(null);
     setSyncedDoc(null);
     setSyncError(null);
+
+    // Guest demo: simulate server-side OCR against the mock workspace, with a
+    // short delay so the READING NOTE… progress bar is visible.
+    if (isGuestMode) {
+      setIsTranscribing(true);
+      try {
+        await new Promise((r) => setTimeout(r, 1800));
+        setTranscription(guestTranscribe(doc.id));
+      } finally {
+        setIsTranscribing(false);
+      }
+      return;
+    }
 
     // Primary path: Google Drive OCR, only when signed in. Otherwise wait
     // for the user to trigger the explicit offline (Tesseract) fallback.
@@ -268,8 +309,20 @@ export default function App() {
     void signOut();
   }
 
+  /**
+   * Guest scan shortcut: "load sample note" without a real photo. A 1x1
+   * placeholder data URL stands in for the image; the mock OCR ignores pixels
+   * and returns the bundled sample text for the selected doc.
+   */
+  function handleLoadSampleNote() {
+    if (!selectedDoc) return;
+    const placeholder =
+      'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    void handleImageSelected(placeholder, selectedDoc);
+  }
+
   async function handleSyncToDrive(payload: JoltSessionPayload) {
-    if (!googleUser) {
+    if (!isSignedIn) {
       setSyncError('Sign in with Google above before syncing.');
       return;
     }
@@ -278,6 +331,12 @@ export default function App() {
     setSyncError(null);
     setSyncedDoc(null);
     try {
+      // Guest demo: simulate the Drive create with a short delay.
+      if (isGuestMode) {
+        await new Promise((r) => setTimeout(r, 1200));
+        setSyncedDoc(guestSyncSession(payload));
+        return;
+      }
       const doc = await withTokenRetry((token) => syncSessionToDrive(token, payload));
       setSyncedDoc(doc);
     } catch (err) {
@@ -301,150 +360,66 @@ export default function App() {
     // users don't see the sign-in screen flash on reload.
     return <div className="min-h-dvh w-full bg-[#FFFFFF]" aria-busy="true" />;
   }
-  if (!googleUser) {
-    return <SignInScreen isBusy={isAuthBusy} error={authError} onSignIn={() => void signIn()} />;
+  if (!effectiveUser) {
+    return (
+      <SignInScreen
+        isBusy={isAuthBusy}
+        error={authError}
+        onSignIn={() => void signIn()}
+        onGuestMode={enterGuestMode}
+      />
+    );
   }
 
   /** The Scan Photo feature: landing / capture / review-and-sync form. */
   function renderScanTab() {
-    if (!hasImage) {
-      // Step 1: choose a target document, then capture/upload a photo.
-      return (
-        <PhotoUploadLanding
-          accessToken={googleUser!.accessToken}
-          selectedDoc={selectedDoc}
-          onSelectDoc={handleSelectDoc}
-          onClearDoc={handleClearDoc}
-          onImageSelected={handleImageSelected}
-          disabled={isTranscribing}
-        />
-      );
-    }
-    // Step 2: the session form, populated from the captured photo's OCR.
-    // The ← BACK button sits on top, then a monochrome progress bar: reading
-    // the note (OCR), and later creating the Google Doc in Drive (sync).
-    const scanComplete = !isTranscribing && transcription?.source === 'google-drive';
     return (
-      <>
-        <button
-          type="button"
-          onClick={handleScanBack}
-          className="self-start rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
-        >
-          ← Back
-        </button>
-
-        {/* While reading the note, dim + block the rest of the screen and
-            raise the progress bar above the overlay. */}
-        {isTranscribing && (
-          <div className="fixed inset-0 z-40 bg-black/40" aria-hidden />
-        )}
-
-        {(isTranscribing || scanComplete) && (
-          <div className={isTranscribing ? 'relative z-50' : undefined}>
-            <ScanProgress
-              isScanning={isTranscribing}
-              isComplete={scanComplete}
-              documentId={selectedDoc?.id ?? transcription?.docId ?? null}
-            />
-          </div>
-        )}
-
-        <SessionForm
-          key={flowKey}
-          initialDescription={transcription?.text ?? ''}
-          imageBase64={imageBase64}
-          documentName={selectedDoc?.name ?? ''}
-          documentId={transcription?.docId ?? selectedDoc?.id}
-          onImageSelected={handleRetake}
-          onSyncToDrive={handleSyncToDrive}
-          disabled={isTranscribing || isSyncing}
-          isSignedIn={isSignedIn}
-          isSyncing={isSyncing}
-          isTranscribing={isTranscribing}
-          transcriptionSource={transcription?.source ?? null}
-          transcribeError={transcribeError}
-          canOfflineFallback={!isSignedIn && !isTranscribing}
-          onOfflineFallback={handleOfflineFallback}
-        />
-
-        {/* Creating the Google Doc in Drive (sync step) — below the Sync
-            button; dim + block the rest of the screen while it runs. */}
-        {isSyncing && (
-          <div className="fixed inset-0 z-40 bg-black/40" aria-hidden />
-        )}
-        {isSyncing && (
-          <div className="relative z-50">
-            <ScanProgress
-              isScanning
-              isComplete={false}
-              scanningLabel="Creating doc in Google Drive…"
-              showOpenDoc={false}
-            />
-          </div>
-        )}
-
-        {/* Only errors show here; success is handled by the confirmation view. */}
-        {syncError && <SyncResultBanner doc={null} error={syncError} />}
-
-        {scanLeaveStage !== 'closed' && (
-          <LeaveSessionModal
-            stage={scanLeaveStage}
-            isBusy={false}
-            folderName={scanDiscardFolder}
-            onFinishAndSave={() => setScanLeaveStage('closed')}
-            onDiscard={() => void handleScanDiscard()}
-            onDiscardedOk={handleScanDiscardedOk}
-            onDismiss={() => setScanLeaveStage('closed')}
-          />
-        )}
-      </>
-    );
-  }
-
-  /**
-   * EDITOR view after FINISH SESSION: the ADD MANUAL SESSION form seeded with
-   * the written text and tracked analytics. Rendered in place of TextEditor
-   * while `editorSession` is set, so the header toggle stays on EDITOR.
-   */
-  function renderEditorFinishedForm() {
-    if (!editorSession) return null;
-    return (
-      <>
-        <SessionForm
-          key={flowKey}
-          initialDescription={editorSession.text}
-          imageBase64=""
-          documentName={selectedDoc?.name ?? ''}
-          documentId={selectedDoc?.id}
-          sessionMetrics={editorSession.metrics}
-          onBack={handleBackToModes}
-          onImageSelected={handleRetake}
-          onSyncToDrive={handleSyncToDrive}
-          disabled={isSyncing}
-          isSignedIn={isSignedIn}
-          isSyncing={isSyncing}
-        />
-
-        {isSyncing && (
-          <p className="text-sm text-indigo-300" aria-live="polite">
-            Creating your Google Doc in Drive…
-          </p>
-        )}
-        {syncError && <SyncResultBanner doc={null} error={syncError} />}
-      </>
+      <ScanTabView
+        accessToken={effectiveUser!.accessToken}
+        flowKey={flowKey}
+        selectedDoc={selectedDoc}
+        transcription={transcription}
+        imageBase64={imageBase64}
+        hasImage={hasImage}
+        isTranscribing={isTranscribing}
+        isSyncing={isSyncing}
+        isSignedIn={isSignedIn}
+        transcribeError={transcribeError}
+        syncError={syncError}
+        isGuest={isGuestMode}
+        scanLeaveStage={scanLeaveStage}
+        scanDiscardFolder={scanDiscardFolder}
+        showDocPreview={showDocPreview}
+        onSelectDoc={handleSelectDoc}
+        onClearDoc={handleClearDoc}
+        onImageSelected={handleImageSelected}
+        onLoadSampleNote={handleLoadSampleNote}
+        onRetake={handleRetake}
+        onSyncToDrive={handleSyncToDrive}
+        onOfflineFallback={handleOfflineFallback}
+        onScanBack={handleScanBack}
+        onScanDiscard={() => void handleScanDiscard()}
+        onScanDiscardedOk={handleScanDiscardedOk}
+        onScanLeaveDismiss={() => setScanLeaveStage('closed')}
+        onPreviewDoc={() => setShowDocPreview(true)}
+        onClosePreview={() => setShowDocPreview(false)}
+      />
     );
   }
 
   return (
     <>
-      <AppHeader
-        user={googleUser}
-        isBusy={isAuthBusy}
-        error={authError}
-        onSignOut={handleSignOut}
-        onSwitchAccount={switchAccount}
-      />
+      {isGuestMode ? (
+        <GuestBadge onExit={exitGuestMode} />
+      ) : (
+        <AppHeader
+          user={googleUser!}
+          isBusy={isAuthBusy}
+          error={authError}
+          onSignOut={handleSignOut}
+          onSwitchAccount={switchAccount}
+        />
+      )}
       <main className="mx-auto flex min-h-full max-w-xl flex-col gap-6 px-4 py-6">
         {!hasChosenInitialMode ? (
           <ModeSelectionLanding onChoose={handleChooseInitialMode} />
@@ -461,7 +436,18 @@ export default function App() {
               {editorSession ? (
                 // Finished session: the editor already forced its final save
                 // before handing off, so swap it for the logging form here.
-                renderEditorFinishedForm()
+                <SessionLoggingView
+                  flowKey={flowKey}
+                  text={editorSession.text}
+                  metrics={editorSession.metrics}
+                  selectedDoc={selectedDoc}
+                  isSignedIn={isSignedIn}
+                  isSyncing={isSyncing}
+                  syncError={syncError}
+                  onBack={handleBackToModes}
+                  onRetake={handleRetake}
+                  onSyncToDrive={handleSyncToDrive}
+                />
               ) : (
                 <TextEditor
                   doc={selectedDoc}
@@ -472,6 +458,7 @@ export default function App() {
                   onChangeDoc={handleClearDoc}
                   onBack={handleBackToModes}
                   onFinish={handleFinishSession}
+                  isGuest={isGuestMode}
                 />
               )}
             </div>

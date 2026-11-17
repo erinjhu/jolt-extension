@@ -5,6 +5,8 @@ interface SignInScreenProps {
   isBusy: boolean;
   error: string | null;
   onSignIn: () => void;
+  /** Enter the no-account local demo sandbox. */
+  onGuestMode: () => void;
 }
 
 /**
@@ -16,7 +18,7 @@ interface SignInScreenProps {
  * (`VITE_GOOGLE_CLIENT_ID`); the user never enters it. A clean notice appears
  * only during development if that env var is missing.
  */
-export default function SignInScreen({ isBusy, error, onSignIn }: SignInScreenProps) {
+export default function SignInScreen({ isBusy, error, onSignIn, onGuestMode }: SignInScreenProps) {
   // Dev-only hint when the build has no client ID configured.
   const showMissingConfigNotice = import.meta.env.DEV && !hasClientId();
 
@@ -32,14 +34,25 @@ export default function SignInScreen({ isBusy, error, onSignIn }: SignInScreenPr
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={onSignIn}
-          disabled={isBusy}
-          className="w-full rounded-none bg-[#111111] px-6 py-4 text-sm font-bold uppercase tracking-wide text-[#FFFFFF] transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isBusy ? 'Signing in…' : 'Sign in with Google'}
-        </button>
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={onSignIn}
+            disabled={isBusy}
+            className="w-full rounded-none bg-[#111111] px-6 py-4 text-sm font-bold uppercase tracking-wide text-[#FFFFFF] transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isBusy ? 'Signing in…' : 'Sign in with Google'}
+          </button>
+
+          <button
+            type="button"
+            onClick={onGuestMode}
+            disabled={isBusy}
+            className="w-full rounded-none border border-[#111111] bg-[#FFFFFF] px-6 py-4 text-sm font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Try Demo as Guest
+          </button>
+        </div>
 
         {error && (
           <p role="alert" className="font-mono text-xs text-red-600">

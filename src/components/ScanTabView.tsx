@@ -1,0 +1,179 @@
+import DocPreviewModal from './DocPreviewModal';
+import LeaveSessionModal from './LeaveSessionModal';
+import PhotoUploadLanding from './PhotoUploadLanding';
+import ScanProgress from './ScanProgress';
+import SessionForm from './SessionForm';
+import SyncResultBanner from './SyncResultBanner';
+import { guestLoadText } from '../services/guestDemoService';
+import type { TargetDoc } from '../services/joltDocumentsService';
+import type { JoltSessionPayload } from '../types/session';
+import type { TranscriptionResult } from '../services/transcription';
+
+/**
+ * The SCAN feature view: the document-selection / photo-capture landing, then
+ * the OCR progress + pre-filled ADD MANUAL SESSION form, with the scan leave
+ * confirmation and (in guest mode) the extracted-doc preview modal.
+ *
+ * Presentational: all state and side effects live in App; this component only
+ * wires them to the scan UI so App stays small and focused on orchestration.
+ */
+interface ScanTabViewProps {
+  accessToken: string;
+  flowKey: number;
+  selectedDoc: TargetDoc | null;
+  transcription: TranscriptionResult | null;
+  imageBase64: string;
+  hasImage: boolean;
+  isTranscribing: boolean;
+  isSyncing: boolean;
+  isSignedIn: boolean;
+  transcribeError: string | null;
+  syncError: string | null;
+  isGuest: boolean;
+  scanLeaveStage: 'closed' | 'confirm' | 'discarded';
+  scanDiscardFolder: string;
+  showDocPreview: boolean;
+  onSelectDoc: (doc: TargetDoc) => void;
+  onClearDoc: () => void;
+  onImageSelected: (imageBase64: string, doc: TargetDoc) => void;
+  onLoadSampleNote: () => void;
+  onRetake: (imageBase64: string) => void;
+  onSyncToDrive: (payload: JoltSessionPayload) => void;
+  onOfflineFallback: () => void;
+  onScanBack: () => void;
+  onScanDiscard: () => void;
+  onScanDiscardedOk: () => void;
+  onScanLeaveDismiss: () => void;
+  onPreviewDoc: () => void;
+  onClosePreview: () => void;
+}
+
+export default function ScanTabView(props: ScanTabViewProps) {
+  const {
+    accessToken,
+    flowKey,
+    selectedDoc,
+    transcription,
+    imageBase64,
+    hasImage,
+    isTranscribing,
+    isSyncing,
+    isSignedIn,
+    transcribeError,
+    syncError,
+    isGuest,
+    scanLeaveStage,
+    scanDiscardFolder,
+    showDocPreview,
+    onSelectDoc,
+    onClearDoc,
+    onImageSelected,
+    onLoadSampleNote,
+    onRetake,
+    onSyncToDrive,
+    onOfflineFallback,
+    onScanBack,
+    onScanDiscard,
+    onScanDiscardedOk,
+    onScanLeaveDismiss,
+    onPreviewDoc,
+    onClosePreview,
+  } = props;
+
+  if (!hasImage) {
+    // Step 1: choose a target document, then capture/upload a photo.
+    return (
+      <PhotoUploadLanding
+        accessToken={accessToken}
+        selectedDoc={selectedDoc}
+        onSelectDoc={onSelectDoc}
+        onClearDoc={onClearDoc}
+        onImageSelected={onImageSelected}
+        disabled={isTranscribing}
+        isGuest={isGuest}
+        onLoadSampleNote={onLoadSampleNote}
+      />
+    );
+  }
+
+  // Step 2: ← BACK on top, OCR progress bar, then the pre-filled form.
+  const scanComplete = !isTranscribing && transcription?.source === 'google-drive';
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onScanBack}
+        className="self-start rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
+      >
+        ← Back
+      </button>
+
+      {/* While reading the note, dim + block the rest of the screen. */}
+      {isTranscribing && <div className="fixed inset-0 z-40 bg-black/40" aria-hidden />}
+
+      {(isTranscribing || scanComplete) && (
+        <div className={isTranscribing ? 'relative z-50' : undefined}>
+          <ScanProgress
+            isScanning={isTranscribing}
+            isComplete={scanComplete}
+            documentId={selectedDoc?.id ?? transcription?.docId ?? null}
+            onPreviewDoc={isGuest ? onPreviewDoc : undefined}
+          />
+        </div>
+      )}
+
+      <SessionForm
+        key={flowKey}
+        initialDescription={transcription?.text ?? ''}
+        imageBase64={imageBase64}
+        documentName={selectedDoc?.name ?? ''}
+        documentId={transcription?.docId ?? selectedDoc?.id}
+        onImageSelected={onRetake}
+        onSyncToDrive={onSyncToDrive}
+        disabled={isTranscribing || isSyncing}
+        isSignedIn={isSignedIn}
+        isSyncing={isSyncing}
+        isTranscribing={isTranscribing}
+        transcriptionSource={transcription?.source ?? null}
+        transcribeError={transcribeError}
+        canOfflineFallback={!isSignedIn && !isTranscribing}
+        onOfflineFallback={onOfflineFallback}
+      />
+
+      {/* Creating the Google Doc in Drive (sync step), below the Sync button. */}
+      {isSyncing && <div className="fixed inset-0 z-40 bg-black/40" aria-hidden />}
+      {isSyncing && (
+        <div className="relative z-50">
+          <ScanProgress
+            isScanning
+            isComplete={false}
+            scanningLabel="Creating doc in Google Drive…"
+            showOpenDoc={false}
+          />
+        </div>
+      )}
+
+      {syncError && <SyncResultBanner doc={null} error={syncError} />}
+
+      {scanLeaveStage !== 'closed' && (
+        <LeaveSessionModal
+          stage={scanLeaveStage}
+          isBusy={false}
+          folderName={scanDiscardFolder}
+          onFinishAndSave={onScanLeaveDismiss}
+          onDiscard={onScanDiscard}
+          onDiscardedOk={onScanDiscardedOk}
+          onDismiss={onScanLeaveDismiss}
+        />
+      )}
+
+      {isGuest && showDocPreview && selectedDoc && (
+        <DocPreviewModal
+          title={selectedDoc.name}
+          text={guestLoadText(selectedDoc.id)}
+          onClose={onClosePreview}
+        />
+      )}
+    </>
+  );
+}

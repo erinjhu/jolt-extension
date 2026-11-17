@@ -20,6 +20,11 @@ interface ScanProgressProps {
   documentId?: string | null;
   /** Show the "Open Google Doc ↗" action on completion (default true). */
   showOpenDoc?: boolean;
+  /**
+   * Guest demo: when provided, the completion action opens an in-app preview
+   * modal ("Preview extracted doc") instead of linking to docs.google.com.
+   */
+  onPreviewDoc?: () => void;
 }
 
 /** Ceiling the indeterminate progress creeps toward while still scanning. */
@@ -32,6 +37,7 @@ export default function ScanProgress({
   completeLabel = 'Note added to Google Doc',
   documentId,
   showOpenDoc = true,
+  onPreviewDoc,
 }: ScanProgressProps) {
   const [percent, setPercent] = useState(0);
   const intervalRef = useRef<number | null>(null);
@@ -73,7 +79,19 @@ export default function ScanProgress({
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-bold uppercase tracking-wide">
             {isComplete ? (
-              showOpenDoc && docHref ? (
+              showOpenDoc && onPreviewDoc ? (
+                // Guest demo: in-app preview instead of an external Docs link.
+                <>
+                  Note added to{' '}
+                  <button
+                    type="button"
+                    onClick={onPreviewDoc}
+                    className="underline underline-offset-2 transition hover:text-gray-600"
+                  >
+                    extracted doc ↗
+                  </button>
+                </>
+              ) : showOpenDoc && docHref ? (
                 // "Note added to " stays plain; "Google Doc ↗" is the link.
                 <>
                   Note added to{' '}

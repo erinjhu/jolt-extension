@@ -5,6 +5,11 @@ import {
   listRecentDocs,
   type TargetDoc,
 } from '../services/joltDocumentsService';
+import {
+  guestCreateDoc,
+  guestDefaultFolder,
+  guestListDocs,
+} from '../services/guestDemoService';
 import { isPickerConfigured, pickGoogleDoc, pickGoogleFolder } from '../services/googlePicker';
 import { joltSingleLineClass } from './jolt/JoltField';
 
@@ -12,6 +17,8 @@ interface DocumentSelectorProps {
   accessToken: string;
   selectedDoc: TargetDoc | null;
   onSelect: (doc: TargetDoc) => void;
+  /** In guest demo mode, use the in-memory mock workspace (no network). */
+  isGuest?: boolean;
 }
 
 /**
@@ -37,6 +44,7 @@ export default function DocumentSelector({
   accessToken,
   selectedDoc,
   onSelect,
+  isGuest = false,
 }: DocumentSelectorProps) {
   const [docs, setDocs] = useState<TargetDoc[]>([]);
   const [isCreating, setIsCreating] = useState(false);
@@ -46,6 +54,10 @@ export default function DocumentSelector({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (isGuest) {
+      setDocs(guestListDocs());
+      return;
+    }
     let cancelled = false;
     listRecentDocs(accessToken)
       .then((list) => !cancelled && setDocs(list))
@@ -53,13 +65,17 @@ export default function DocumentSelector({
     return () => {
       cancelled = true;
     };
-  }, [accessToken]);
+  }, [accessToken, isGuest]);
 
   /** Open the create flow, defaulting the destination folder to JoltSync. */
   async function startCreating() {
     setIsCreating(true);
     setNewTitle(buildDefaultDocTitle());
     if (!destFolder) {
+      if (isGuest) {
+        setDestFolder(guestDefaultFolder());
+        return;
+      }
       try {
         setDestFolder(await getDefaultFolder(accessToken));
       } catch {
@@ -87,7 +103,9 @@ export default function DocumentSelector({
     setBusy(true);
     setError(null);
     try {
-      const created = await createTargetDoc(accessToken, title, destFolder?.id);
+      const created = isGuest
+        ? guestCreateDoc(title)
+        : await createTargetDoc(accessToken, title, destFolder?.id);
       const doc = { id: created.id, name: created.name };
       setDocs((prev) => [doc, ...prev]);
       onSelect(doc);
@@ -149,18 +167,20 @@ export default function DocumentSelector({
             autoFocus
           />
 
-          <div className="flex items-center justify-between gap-2">
-            <span className="truncate font-mono text-xs text-gray-500">
-              Folder: {destFolder?.name ?? 'JoltSync'}
-            </span>
-            <button
-              type="button"
-              onClick={() => void handleChooseFolder()}
-              className="whitespace-nowrap rounded-none border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-black transition hover:bg-gray-100"
-            >
-              Choose Folder…
-            </button>
-          </div>
+          {!isGuest && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate font-mono text-xs text-gray-500">
+                Folder: {destFolder?.name ?? 'JoltSync'}
+              </span>
+              <button
+                type="button"
+                onClick={() => void handleChooseFolder()}
+                className="whitespace-nowrap rounded-none border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-black transition hover:bg-gray-100"
+              >
+                Choose Folder…
+              </button>
+            </div>
+          )}
 
           <div className="flex gap-2">
             <button
@@ -189,13 +209,15 @@ export default function DocumentSelector({
           >
             + Create New Doc
           </button>
-          <button
-            type="button"
-            onClick={() => void handleBrowse()}
-            className="rounded-none border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-black transition hover:bg-gray-100"
-          >
-            Select a Doc from Drive
-          </button>
+          {!isGuest && (
+            <button
+              type="button"
+              onClick={() => void handleBrowse()}
+              className="rounded-none border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-black transition hover:bg-gray-100"
+            >
+              Select a Doc from Drive
+            </button>
+          )}
         </div>
       )}
 

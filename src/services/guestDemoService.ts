@@ -1,0 +1,181 @@
+/**
+ * Guest Demo Mode: an in-memory stand-in for the Google Drive + Docs layer so
+ * visitors can explore the full Jolt workflow (editor, scan, session tracking)
+ * without signing in. Every function here mirrors the signature of its real
+ * counterpart (joltDocumentsService / googleDocsService / transcription /
+ * syncSessionToDrive) but operates purely on module-local state — no network.
+ *
+ * Nothing persists across reloads; the store resets when the tab closes, which
+ * is the intended "sandbox" behavior for a demo.
+ */
+
+import type { GoogleUser } from './googleAuth';
+import type { TargetDoc } from './joltDocumentsService';
+import type { CreatedDoc } from './googleDocsService';
+import type { TranscriptionResult } from './transcription';
+import type { JoltSessionPayload } from '../types/session';
+
+/** Folder label shown in the post-discard "saved to Drive" confirmation. */
+export const GUEST_FOLDER_NAME = 'My Drive (Demo)';
+
+/** Synthetic user that satisfies the auth gate + header without real OAuth. */
+export const GUEST_USER: GoogleUser = {
+  accessToken: 'guest-demo',
+  email: 'guest@demo.local',
+  name: 'Guest',
+  picture: null,
+};
+
+/** A mock document: a selectable target plus its in-memory body text. */
+interface GuestDoc {
+  id: string;
+  name: string;
+  text: string;
+}
+
+/** Build a clean local date-time title, e.g. "Nov 16, 2026, 10:30 PM". */
+function formatDocTitle(date: Date): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+}
+
+/** Sample handwritten-note text the mock OCR "extracts" in Scan Mode. */
+export const SAMPLE_OCR_TEXT = [
+  'Morning pages — ideas are finally flowing again.',
+  '',
+  'The trick is to keep the hand moving and not stop to judge the words.',
+  'Momentum beats perfection. Three pages, every day, before the inbox.',
+].join('\n');
+
+/** Starting body for the pre-populated "Sample Draft" document. */
+const SAMPLE_DRAFT_TEXT = [
+  'The city never looked the same after that winter.',
+  '',
+  'She kept the ticket stub in her coat pocket for years, a small paper',
+  'proof that the night had actually happened.',
+].join('\n');
+
+/** Starting body for the pre-populated "Project Notes" document. */
+const PROJECT_NOTES_TEXT = [
+  'Project Notes',
+  '',
+  '- Draft the opening chapter by Friday',
+  '- Interview two writers about their daily routines',
+  '- Outline the middle act (currently sagging)',
+].join('\n');
+
+/**
+ * The in-memory workspace. Seeded with two sample docs on first use so the
+ * demo always has something to open. A counter keeps new-doc ids unique.
+ */
+let docs: GuestDoc[] = [];
+let idCounter = 0;
+let seeded = false;
+
+function nextId(): string {
+  idCounter += 1;
+  return `guest-doc-${idCounter}`;
+}
+
+/** Seed the two sample documents exactly once per session. */
+function ensureSeeded(): void {
+  if (seeded) return;
+  seeded = true;
+  docs = [
+    { id: nextId(), name: `${formatDocTitle(new Date())} (Sample Draft)`, text: SAMPLE_DRAFT_TEXT },
+    { id: nextId(), name: 'Project Notes', text: PROJECT_NOTES_TEXT },
+  ];
+}
+
+/** Reset the sandbox (used when exiting demo mode). */
+export function resetGuestWorkspace(): void {
+  docs = [];
+  idCounter = 0;
+  seeded = false;
+}
+
+function findDoc(id: string): GuestDoc | undefined {
+  return docs.find((d) => d.id === id);
+}
+
+// ── Shadows of joltDocumentsService ───────────────────────────────────────
+
+/** Guest equivalent of `listRecentDocs`: the mock workspace, newest first. */
+export function guestListDocs(): TargetDoc[] {
+  ensureSeeded();
+  return docs.map(({ id, name }) => ({ id, name }));
+}
+
+/** Guest equivalent of `getDefaultFolder`. */
+export function guestDefaultFolder(): TargetDoc {
+  return { id: 'guest-folder', name: GUEST_FOLDER_NAME };
+}
+
+/** Guest equivalent of `createTargetDoc`: adds an empty mock doc. */
+export function guestCreateDoc(title: string): CreatedDoc {
+  ensureSeeded();
+  const name = title.trim() || formatDocTitle(new Date());
+  const doc: GuestDoc = { id: nextId(), name, text: '' };
+  docs = [doc, ...docs];
+  return { id: doc.id, name: doc.name, webViewLink: `#demo/${doc.id}` };
+}
+
+// ── Shadows of googleDocsService ──────────────────────────────────────────
+
+/** Guest equivalent of `fetchDocumentText`. */
+export function guestLoadText(fileId: string): string {
+  ensureSeeded();
+  return findDoc(fileId)?.text ?? '';
+}
+
+/** Guest equivalent of `saveDocumentText`: overwrite the mock body. */
+export function guestSaveText(fileId: string, newText: string): void {
+  const doc = findDoc(fileId);
+  if (doc) doc.text = newText;
+}
+
+/** Guest equivalent of `fetchDocumentFolderName`. */
+export function guestFolderName(): string {
+  return GUEST_FOLDER_NAME;
+}
+
+// ── Shadow of the scan transcription path ─────────────────────────────────
+
+/**
+ * Guest equivalent of `transcribeViaGoogleDrive`: simulate server-side OCR by
+ * appending the sample extracted text to the selected mock doc, then return a
+ * TranscriptionResult pointing at that doc (no real Drive link).
+ */
+export function guestTranscribe(docId: string): TranscriptionResult {
+  const doc = findDoc(docId);
+  if (doc) {
+    doc.text = doc.text ? `${doc.text}\n\n${SAMPLE_OCR_TEXT}` : SAMPLE_OCR_TEXT;
+  }
+  return {
+    text: SAMPLE_OCR_TEXT,
+    source: 'google-drive',
+    docId,
+    webViewLink: `#demo/${docId}`,
+  };
+}
+
+// ── Shadow of syncSessionToDrive ──────────────────────────────────────────
+
+/**
+ * Guest equivalent of `syncSessionToDrive`: no network. Returns a CreatedDoc
+ * describing the (mock) target so the confirmation screen can render.
+ */
+export function guestSyncSession(payload: JoltSessionPayload): CreatedDoc {
+  const existing = docs.find((d) => d.name === payload.targetDocumentName);
+  const id = existing?.id ?? nextId();
+  return {
+    id,
+    name: payload.targetDocumentName || payload.title || 'Demo Session',
+    webViewLink: `#demo/${id}`,
+  };
+}
