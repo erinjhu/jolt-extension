@@ -15,6 +15,20 @@ interface DocumentSelectorProps {
 }
 
 /**
+ * Build a clean, human-readable title from the current local date and time,
+ * e.g. "Nov 16, 2026, 8:58 PM", using the user's local timezone.
+ */
+function buildDefaultDocTitle(): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date());
+}
+
+/**
  * Target Document selector for the landing card: a recent-docs dropdown, an
  * inline "+ Create New Doc" flow, and a "Browse Google Drive..." Picker
  * button. The chosen doc is reported up so photo capture can be gated on it.
@@ -44,6 +58,7 @@ export default function DocumentSelector({
   /** Open the create flow, defaulting the destination folder to JoltSync. */
   async function startCreating() {
     setIsCreating(true);
+    setNewTitle(buildDefaultDocTitle());
     if (!destFolder) {
       try {
         setDestFolder(await getDefaultFolder(accessToken));
@@ -68,11 +83,11 @@ export default function DocumentSelector({
   }
 
   async function handleCreate() {
-    if (!newTitle.trim()) return;
+    const title = newTitle.trim() || buildDefaultDocTitle();
     setBusy(true);
     setError(null);
     try {
-      const created = await createTargetDoc(accessToken, newTitle, destFolder?.id);
+      const created = await createTargetDoc(accessToken, title, destFolder?.id);
       const doc = { id: created.id, name: created.name };
       setDocs((prev) => [doc, ...prev]);
       onSelect(doc);
@@ -151,7 +166,7 @@ export default function DocumentSelector({
             <button
               type="button"
               onClick={() => void handleCreate()}
-              disabled={busy || !newTitle.trim()}
+              disabled={busy}
               className="whitespace-nowrap rounded-none bg-black px-4 py-1.5 text-xs font-bold uppercase text-white disabled:opacity-40"
             >
               Create

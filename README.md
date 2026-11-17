@@ -1,4 +1,4 @@
-# Jolt Notes OCR
+# Jolt for Phone
 
 A React + Vite web app that captures a handwritten note photo, runs local OCR
 (tesseract.js), and assembles a Jolt session payload.
