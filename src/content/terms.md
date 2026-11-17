@@ -2,10 +2,10 @@
 
 **Last Updated:** November 16, 2026
 
-These Terms of Use ("Terms") govern your access to and use of **JoltSync** ("the App", "we", "us", or "our"). By signing in with Google and using the App, you agree to these Terms. If you do not agree, do not use the App.
+These Terms of Use ("Terms") govern your access to and use of **Jolt Extension** ("the App", "we", "us", or "our"). By signing in with Google and using the App, you agree to these Terms. If you do not agree, do not use the App.
 
 ## 1. The Service
-JoltSync is a web application that extracts text from photos of handwritten notes, provides a distraction-free editor, and syncs your writing and writing-session metrics to your own Google Drive so they can be logged with your Jolt account. The App runs in your browser and does not operate its own user database.
+Jolt Extension is a web application that extracts text from photos of handwritten notes, provides a distraction-free editor, and syncs your writing and writing-session metrics to your own Google Drive so they can be logged with your Jolt account. The App runs in your browser and does not operate its own user database.
 
 ## 2. Google Account Access
 To use the App you sign in with Google and grant limited OAuth permissions (`drive.file`, `userinfo.email`, and `userinfo.profile`). The App accesses only files it creates or that you explicitly open or select, and it uses your profile information solely to display your signed-in account. Your use of Google services remains subject to Google's own terms. You may revoke the App's access at any time from your Google Account Permissions page (`https://myaccount.google.com/permissions`).
