@@ -36,6 +36,13 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          # Public Google OAuth web client ID + API key, injected at build
+          # time so the deployed bundle has them (the .env file is gitignored).
+          # Configure these under Settings → Secrets and variables → Actions
+          # → Variables. They are not secrets (they ship in the client bundle).
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_API_KEY: ${{ vars.VITE_GOOGLE_API_KEY }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
