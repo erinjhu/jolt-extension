@@ -2,40 +2,32 @@
 
 **Last Updated:** November 16, 2026
 
-Welcome to **JoltSync** ("the App", "we", "us", or "our"). By accessing or using JoltSync, you agree to be bound by these Terms of Use. If you do not agree to these terms, please do not use the App.
+These Terms of Use ("Terms") govern your access to and use of **JoltSync** ("the App", "we", "us", or "our"). By signing in with Google and using the App, you agree to these Terms. If you do not agree, do not use the App.
 
-## 1. Description of Service
-JoltSync is a web-based writing and document scanning companion that enables you to draft text, convert photos of handwritten notes into text, track writing metrics (such as word count, active writing time, and words per hour), and sync documents and session metadata to your Google Drive and Google Docs accounts.
+## 1. The Service
+JoltSync is a web application that extracts text from photos of handwritten notes, provides a distraction-free editor, and syncs your writing and writing-session metrics to your own Google Drive so they can be logged with your Jolt account. The App runs in your browser and does not operate its own user database.
 
-## 2. Eligibility & Google Account Access
-- You must have a valid Google Account to sign in and use the App.
-- By signing in with Google OAuth, you authorize JoltSync to create, view, and edit only the specific Google Docs and Google Drive files you create or explicitly select within the App.
-- You may revoke JoltSync’s access at any time through your Google Account security settings (`myaccount.google.com/permissions`).
+## 2. Google Account Access
+To use the App you sign in with Google and grant limited OAuth permissions (`drive.file`, `userinfo.email`, and `userinfo.profile`). The App accesses only files it creates or that you explicitly open or select, and it uses your profile information solely to display your signed-in account. Your use of Google services remains subject to Google's own terms. You may revoke the App's access at any time from your Google Account Permissions page (`https://myaccount.google.com/permissions`).
 
-## 3. User Content & Ownership
-- **You retain full ownership** of all documents, handwritten scans, text, and session data you create or upload through JoltSync.
-- All document content and session logs are stored directly in your personal Google Drive account. We do not claim any intellectual property rights over your content.
-- You are solely responsible for the content you create, scan, or store using the App and agree not to use the App for any unlawful purpose.
+## 3. Your Content
+You retain all rights to the notes, images, and documents you create or upload. Because your content is stored in your own Google Drive, you are responsible for managing, backing up, and deleting it. We do not claim ownership of your content and do not sell or share it.
 
 ## 4. Acceptable Use
-You agree not to:
-- Attempt to reverse engineer, disrupt, or overload the App or its underlying APIs.
-- Use the App to process, store, or distribute malicious code or illegal material.
-- Circumvent any security or authentication mechanisms.
+- Use the App only for lawful purposes and in compliance with these Terms.
+- Do not attempt to disrupt, reverse engineer, or gain unauthorized access to the App or to other users' data.
+- Do not use the App to process content you do not have the right to process.
 
 ## 5. Third-Party Services
-JoltSync integrates with Google APIs (Google Drive API, Google Docs API, and Google Identity Services). Your use of those services is also governed by Google’s Terms of Service and Privacy Policy. We are not responsible for outages, changes, or data loss caused by third-party service interruptions.
+The App relies on Google APIs (Identity, Drive, Docs) and optical character recognition to function. We are not responsible for the availability, accuracy, or policies of these third-party services.
 
-## 6. Disclaimer of Warranties ("As Is")
-JoltSync is provided on an **"AS IS"** and **"AS AVAILABLE"** basis without warranties of any kind, express or implied. While we strive for reliable syncing and accurate text extraction, we do not guarantee that the App will be uninterrupted, error-free, or completely free of data loss.
+## 6. Disclaimer & Limitation of Liability
+The App is provided "as is" and "as available," without warranties of any kind, express or implied. To the fullest extent permitted by law, we are not liable for any indirect, incidental, or consequential damages, or for any loss of data arising from your use of the App. Because your data lives in your own Google Drive, you are responsible for retaining your own backups.
 
-## 7. Limitation of Liability
-To the maximum extent permitted by applicable law, JoltSync and its creator(s) shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of data, profits, or productivity arising out of your use of or inability to use the App.
+## 7. Changes to These Terms
+We may update these Terms from time to time. Continued use of the App after changes take effect constitutes acceptance of the revised Terms. Any updates will be posted on this page with an updated effective date.
 
-## 8. Changes to These Terms
-We may update these Terms of Use from time to time. Continued use of the App after any changes constitutes your acceptance of the updated terms.
-
-## 9. Contact
-If you have any questions about these Terms of Use, please contact:  
-**Email:** [erin.hu@uwaterloo.ca]
+## 8. Contact
+If you have any questions about these Terms, please contact:  
+**Email:** [erin.hu@uwaterloo.ca]  
 **Website:** [https://erinjhu.github.io/jolt-extension/]

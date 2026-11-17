@@ -1,5 +1,4 @@
 import { hasClientId } from '../services/clientIdStore';
-import { navigateHash } from '../hooks/useHashRoute';
 import JoltLogoIcon from './jolt/JoltLogoIcon';
 
 interface SignInScreenProps {
@@ -56,16 +55,14 @@ export default function SignInScreen({ isBusy, error, onSignIn }: SignInScreenPr
 
         <footer className="flex items-center justify-center gap-4 border-t border-[#111111] pt-6 font-mono text-xs text-gray-600">
           <a
-            href="#/privacy"
-            onClick={() => navigateHash('/privacy')}
+            href={`${import.meta.env.BASE_URL}privacy.html`}
             className="underline underline-offset-4 transition hover:text-[#111111]"
           >
             Privacy Policy
           </a>
           <span aria-hidden="true">·</span>
           <a
-            href="#/terms"
-            onClick={() => navigateHash('/terms')}
+            href={`${import.meta.env.BASE_URL}terms.html`}
             className="underline underline-offset-4 transition hover:text-[#111111]"
           >
             Terms of Use
