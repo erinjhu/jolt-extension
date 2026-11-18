@@ -25,6 +25,11 @@ interface ScanProgressProps {
    * modal ("Preview extracted doc") instead of linking to docs.google.com.
    */
   onPreviewDoc?: () => void;
+  /**
+   * Render the card centered in a full-viewport dimmed backdrop (used for the
+   * blocking "Syncing session to Jolt…" state) instead of inline in the flow.
+   */
+  overlay?: boolean;
 }
 
 /** Ceiling the indeterminate progress creeps toward while still scanning. */
@@ -38,6 +43,7 @@ export default function ScanProgress({
   documentId,
   showOpenDoc = true,
   onPreviewDoc,
+  overlay = false,
 }: ScanProgressProps) {
   const [percent, setPercent] = useState(0);
   const intervalRef = useRef<number | null>(null);
@@ -72,10 +78,13 @@ export default function ScanProgress({
     ? `https://docs.google.com/document/d/${documentId}/edit`
     : null;
 
-  return (
-    <div className="flex flex-col gap-3">
-      {/* Status + progress track. */}
-      <div className="flex flex-col gap-2 rounded-none border border-[#111111] bg-[#FFFFFF] p-4 text-[#111111]">
+  // The progress card itself — reused inline or inside the centered overlay.
+  const card = (
+    <div
+      className={`flex flex-col gap-2 rounded-none border border-[#111111] bg-[#FFFFFF] text-[#111111] ${
+        overlay ? 'w-full max-w-md p-6' : 'p-4'
+      }`}
+    >
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-bold uppercase tracking-wide">
             {isComplete ? (
@@ -128,8 +137,18 @@ export default function ScanProgress({
             style={{ width: `${percent}%` }}
           />
         </div>
-      </div>
-
     </div>
   );
+
+  // Blocking sync state: center the card in a full-viewport dimmed backdrop.
+  if (overlay) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+        {card}
+      </div>
+    );
+  }
+
+  // Inline (scan reading / complete): sits in the normal document flow.
+  return <div className="flex flex-col gap-3">{card}</div>;
 }

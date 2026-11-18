@@ -1,4 +1,5 @@
 import SessionForm from './SessionForm';
+import ScanProgress from './ScanProgress';
 import SyncResultBanner from './SyncResultBanner';
 import type { WritingSessionMetrics } from '../hooks/useWritingSession';
 import type { TargetDoc } from '../services/joltDocumentsService';
@@ -57,10 +58,15 @@ export default function SessionLoggingView({
         isSyncing={isSyncing}
       />
 
+      {/* Syncing the session to Jolt: full-viewport dimmed, centered card. */}
       {isSyncing && (
-        <p className="text-sm text-indigo-300" aria-live="polite">
-          Creating your Google Doc in Drive…
-        </p>
+        <ScanProgress
+          isScanning
+          isComplete={false}
+          scanningLabel="Syncing session to Jolt…"
+          showOpenDoc={false}
+          overlay
+        />
       )}
       {syncError && <SyncResultBanner doc={null} error={syncError} />}
     </>

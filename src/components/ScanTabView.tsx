@@ -136,17 +136,15 @@ export default function ScanTabView(props: ScanTabViewProps) {
         onOfflineFallback={onOfflineFallback}
       />
 
-      {/* Creating the Google Doc in Drive (sync step), below the Sync button. */}
-      {isSyncing && <div className="fixed inset-0 z-40 bg-black/40" aria-hidden />}
+      {/* Syncing the session to Jolt: full-viewport dimmed, centered card. */}
       {isSyncing && (
-        <div className="relative z-50">
-          <ScanProgress
-            isScanning
-            isComplete={false}
-            scanningLabel="Creating doc in Google Drive…"
-            showOpenDoc={false}
-          />
-        </div>
+        <ScanProgress
+          isScanning
+          isComplete={false}
+          scanningLabel="Syncing session to Jolt…"
+          showOpenDoc={false}
+          overlay
+        />
       )}
 
       {syncError && <SyncResultBanner doc={null} error={syncError} />}
