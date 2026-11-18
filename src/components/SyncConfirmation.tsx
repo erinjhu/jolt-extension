@@ -5,6 +5,10 @@ interface SyncConfirmationProps {
   doc: CreatedDoc | null;
   /** Resets the flow to a fresh, empty capture form. */
   onStartNewSession: () => void;
+  /** Guest demo: open the in-app preview instead of a docs.google.com link. */
+  isGuest?: boolean;
+  /** Guest demo: invoked by the "open doc" action to show the preview. */
+  onPreviewDoc?: () => void;
 }
 
 /**
@@ -13,7 +17,12 @@ interface SyncConfirmationProps {
  * document name with a link to open it, and a prominent "Add New Session"
  * button to start over. Matches Jolt's sharp-cornered #FFFFFF / #111111 look.
  */
-export default function SyncConfirmation({ doc, onStartNewSession }: SyncConfirmationProps) {
+export default function SyncConfirmation({
+  doc,
+  onStartNewSession,
+  isGuest = false,
+  onPreviewDoc,
+}: SyncConfirmationProps) {
   return (
     <section className="flex flex-col gap-6 rounded-none border border-gray-300 bg-white p-6 text-black">
       <div className="flex flex-col items-center gap-3 border-b border-black pb-6 text-center">
@@ -28,14 +37,24 @@ export default function SyncConfirmation({ doc, onStartNewSession }: SyncConfirm
             <span className="max-w-full truncate text-sm font-semibold text-black">
               {doc.name}
             </span>
-            <a
-              href={doc.webViewLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-xs text-black underline underline-offset-4 transition hover:text-gray-600"
-            >
-              Open Google Doc ↗
-            </a>
+            {isGuest ? (
+              <button
+                type="button"
+                onClick={onPreviewDoc}
+                className="font-mono text-xs text-black underline underline-offset-4 transition hover:text-gray-600"
+              >
+                Open Demo Document ↗
+              </button>
+            ) : (
+              <a
+                href={doc.webViewLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-xs text-black underline underline-offset-4 transition hover:text-gray-600"
+              >
+                Open Google Doc ↗
+              </a>
+            )}
           </div>
         )}
       </div>

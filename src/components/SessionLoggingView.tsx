@@ -17,9 +17,11 @@ interface SessionLoggingViewProps {
   isSignedIn: boolean;
   isSyncing: boolean;
   syncError: string | null;
+  isGuest: boolean;
   onBack: () => void;
   onRetake: (imageBase64: string) => void;
   onSyncToDrive: (payload: JoltSessionPayload) => void;
+  onPreviewDoc: () => void;
 }
 
 export default function SessionLoggingView({
@@ -30,9 +32,11 @@ export default function SessionLoggingView({
   isSignedIn,
   isSyncing,
   syncError,
+  isGuest,
   onBack,
   onRetake,
   onSyncToDrive,
+  onPreviewDoc,
 }: SessionLoggingViewProps) {
   return (
     <>
@@ -43,6 +47,8 @@ export default function SessionLoggingView({
         documentName={selectedDoc?.name ?? ''}
         documentId={selectedDoc?.id}
         sessionMetrics={metrics}
+        isGuest={isGuest}
+        onPreviewDoc={onPreviewDoc}
         onBack={onBack}
         onImageSelected={onRetake}
         onSyncToDrive={onSyncToDrive}

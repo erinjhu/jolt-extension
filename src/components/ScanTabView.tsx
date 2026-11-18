@@ -1,10 +1,8 @@
-import DocPreviewModal from './DocPreviewModal';
 import LeaveSessionModal from './LeaveSessionModal';
 import PhotoUploadLanding from './PhotoUploadLanding';
 import ScanProgress from './ScanProgress';
 import SessionForm from './SessionForm';
 import SyncResultBanner from './SyncResultBanner';
-import { guestLoadText } from '../services/guestDemoService';
 import type { TargetDoc } from '../services/joltDocumentsService';
 import type { JoltSessionPayload } from '../types/session';
 import type { TranscriptionResult } from '../services/transcription';
@@ -32,7 +30,6 @@ interface ScanTabViewProps {
   isGuest: boolean;
   scanLeaveStage: 'closed' | 'confirm' | 'discarded';
   scanDiscardFolder: string;
-  showDocPreview: boolean;
   onSelectDoc: (doc: TargetDoc) => void;
   onClearDoc: () => void;
   onImageSelected: (imageBase64: string, doc: TargetDoc) => void;
@@ -45,7 +42,6 @@ interface ScanTabViewProps {
   onScanDiscardedOk: () => void;
   onScanLeaveDismiss: () => void;
   onPreviewDoc: () => void;
-  onClosePreview: () => void;
 }
 
 export default function ScanTabView(props: ScanTabViewProps) {
@@ -64,7 +60,6 @@ export default function ScanTabView(props: ScanTabViewProps) {
     isGuest,
     scanLeaveStage,
     scanDiscardFolder,
-    showDocPreview,
     onSelectDoc,
     onClearDoc,
     onImageSelected,
@@ -77,7 +72,6 @@ export default function ScanTabView(props: ScanTabViewProps) {
     onScanDiscardedOk,
     onScanLeaveDismiss,
     onPreviewDoc,
-    onClosePreview,
   } = props;
 
   if (!hasImage) {
@@ -128,6 +122,8 @@ export default function ScanTabView(props: ScanTabViewProps) {
         imageBase64={imageBase64}
         documentName={selectedDoc?.name ?? ''}
         documentId={transcription?.docId ?? selectedDoc?.id}
+        isGuest={isGuest}
+        onPreviewDoc={onPreviewDoc}
         onImageSelected={onRetake}
         onSyncToDrive={onSyncToDrive}
         disabled={isTranscribing || isSyncing}
@@ -164,14 +160,6 @@ export default function ScanTabView(props: ScanTabViewProps) {
           onDiscard={onScanDiscard}
           onDiscardedOk={onScanDiscardedOk}
           onDismiss={onScanLeaveDismiss}
-        />
-      )}
-
-      {isGuest && showDocPreview && selectedDoc && (
-        <DocPreviewModal
-          title={selectedDoc.name}
-          text={guestLoadText(selectedDoc.id)}
-          onClose={onClosePreview}
         />
       )}
     </>

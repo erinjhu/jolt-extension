@@ -35,6 +35,7 @@ import {
 } from './services/guestDemoService';
 import { useGuestMode } from './hooks/useGuestMode';
 import GuestBadge from './components/GuestBadge';
+import DemoDocPreview from './components/DemoDocPreview';
 import type { WritingSessionMetrics } from './hooks/useWritingSession';
 import type { TargetDoc } from './services/joltDocumentsService';
 import type { JoltSessionPayload } from './types/session';
@@ -389,7 +390,6 @@ export default function App() {
         isGuest={isGuestMode}
         scanLeaveStage={scanLeaveStage}
         scanDiscardFolder={scanDiscardFolder}
-        showDocPreview={showDocPreview}
         onSelectDoc={handleSelectDoc}
         onClearDoc={handleClearDoc}
         onImageSelected={handleImageSelected}
@@ -402,7 +402,6 @@ export default function App() {
         onScanDiscardedOk={handleScanDiscardedOk}
         onScanLeaveDismiss={() => setScanLeaveStage('closed')}
         onPreviewDoc={() => setShowDocPreview(true)}
-        onClosePreview={() => setShowDocPreview(false)}
       />
     );
   }
@@ -424,7 +423,12 @@ export default function App() {
         {!hasChosenInitialMode ? (
           <ModeSelectionLanding onChoose={handleChooseInitialMode} />
         ) : isSynced ? (
-          <SyncConfirmation doc={syncedDoc} onStartNewSession={resetFlow} />
+          <SyncConfirmation
+            doc={syncedDoc}
+            onStartNewSession={resetFlow}
+            isGuest={isGuestMode}
+            onPreviewDoc={() => setShowDocPreview(true)}
+          />
         ) : selectedDoc ? (
           // Both features stay mounted once a doc is selected so switching
           // tabs never resets the live writing session; only one is shown.
@@ -444,9 +448,11 @@ export default function App() {
                   isSignedIn={isSignedIn}
                   isSyncing={isSyncing}
                   syncError={syncError}
+                  isGuest={isGuestMode}
                   onBack={handleBackToModes}
                   onRetake={handleRetake}
                   onSyncToDrive={handleSyncToDrive}
+                  onPreviewDoc={() => setShowDocPreview(true)}
                 />
               ) : (
                 <TextEditor
@@ -477,6 +483,16 @@ export default function App() {
           </>
         )}
       </main>
+
+      {/* Guest demo: in-app document viewer, opened from any "open doc"
+          action (scan, editor logging form, or sync confirmation). */}
+      {isGuestMode && showDocPreview && selectedDoc && (
+        <DemoDocPreview
+          title={selectedDoc.name}
+          text={guestLoadText(selectedDoc.id)}
+          onClose={() => setShowDocPreview(false)}
+        />
+      )}
     </>
   );
 }

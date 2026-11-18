@@ -41,6 +41,10 @@ interface SessionFormProps {
    * read-only WRITING MODES / FLOW summary. Absent for photo-scan sessions.
    */
   sessionMetrics?: WritingSessionMetrics | null;
+  /** Guest demo: open the in-app Demo Document Preview instead of docs.google.com. */
+  isGuest?: boolean;
+  /** Guest demo: invoked by the "open doc" action to show the preview. */
+  onPreviewDoc?: () => void;
   /** Fires when a photo is captured/uploaded in the PHOTOS section. */
   onImageSelected: (imageBase64: string) => void;
   /** Returns to the mode-selection landing screen. */
@@ -63,6 +67,8 @@ export default function SessionForm({
   documentName = '',
   documentId,
   sessionMetrics = null,
+  isGuest = false,
+  onPreviewDoc,
   onImageSelected,
   onBack,
   onSyncToDrive,
@@ -132,8 +138,16 @@ export default function SessionForm({
     event.target.select();
   }
 
-  /** Open the active Google Doc in a new tab so the user can copy a quote. */
+  /**
+   * Open the active document so the user can copy a quote. In guest demo mode
+   * there's no real Drive file, so show the in-app Demo Document Preview
+   * instead of a (dead) docs.google.com link.
+   */
   function openDocInNewTab() {
+    if (isGuest) {
+      onPreviewDoc?.();
+      return;
+    }
     if (!documentId) return;
     window.open(
       `https://docs.google.com/document/d/${documentId}/edit`,
