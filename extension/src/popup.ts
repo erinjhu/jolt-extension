@@ -173,9 +173,25 @@ async function onSyncFromDrive(): Promise<void> {
  * Ensure the autofill content script is actually running in the tab before we
  * message it. A tab opened before the extension was installed/reloaded has no
  * content script, so `sendMessage` would fail with "receiving end does not
- * exist". Injecting is idempotent — re-running just re-registers the listener.
+ * exist".
+ *
+ * We must NOT inject unconditionally: the bundle declares top-level
+ * `const`s, so loading it a second time into the same page throws
+ * "Identifier has already been declared". Instead we PING first and only
+ * inject when no listener answers, so the script loads at most once per tab.
  */
 async function ensureContentScript(tabId: number): Promise<void> {
+  // 1. Is a content script already listening in this tab?
+  try {
+    const pong = (await chrome.tabs.sendMessage(tabId, {
+      type: 'PING',
+    } satisfies ExtensionMessage)) as MessageResponse<'pong'>;
+    if (pong?.ok) return; // already present — do not inject again
+  } catch {
+    // No listener yet; fall through to inject.
+  }
+
+  // 2. Inject exactly once.
   try {
     await chrome.scripting.executeScript({
       target: { tabId },

@@ -71,7 +71,8 @@ export type ExtensionMessage =
   | { type: 'GET_SYNCED_IDS' }
   | { type: 'MARK_SESSION_SYNCED'; sessionId: string }
   | { type: 'GET_SESSION_PAYLOAD'; sessionId: string }
-  | { type: 'AUTOFILL_JOLT'; payload: JoltSessionPayload };
+  | { type: 'AUTOFILL_JOLT'; payload: JoltSessionPayload }
+  | { type: 'PING' };
 
 /** Uniform response envelope for message handlers. */
 export type MessageResponse<T = unknown> =
