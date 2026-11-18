@@ -147,17 +147,24 @@ export function guestFolderName(): string {
 // ── Shadow of the scan transcription path ─────────────────────────────────
 
 /**
- * Guest equivalent of `transcribeViaGoogleDrive`: simulate server-side OCR by
- * appending the sample extracted text to the selected mock doc, then return a
- * TranscriptionResult pointing at that doc (no real Drive link).
+ * Guest equivalent of `transcribeViaGoogleDrive`: persist the text that OCR
+ * actually extracted from the user's photo into the selected mock doc, so the
+ * in-app Demo Document Preview shows live scanned content rather than stale or
+ * placeholder text. Appends to any existing body (or sets it, for a freshly
+ * created empty doc) so multiple pages scanned in one session accumulate
+ * cleanly. `SAMPLE_OCR_TEXT` is used only as a fallback when OCR returned
+ * nothing readable, so the demo never shows an empty result.
+ *
+ * Returns a TranscriptionResult pointing at the mock doc (no real Drive link).
  */
-export function guestTranscribe(docId: string): TranscriptionResult {
+export function guestTranscribe(docId: string, extractedText?: string): TranscriptionResult {
+  const scanned = extractedText?.trim() ? extractedText.trim() : SAMPLE_OCR_TEXT;
   const doc = findDoc(docId);
   if (doc) {
-    doc.text = doc.text ? `${doc.text}\n\n${SAMPLE_OCR_TEXT}` : SAMPLE_OCR_TEXT;
+    doc.text = doc.text ? `${doc.text}\n\n${scanned}` : scanned;
   }
   return {
-    text: SAMPLE_OCR_TEXT,
+    text: scanned,
     source: 'google-drive',
     docId,
     webViewLink: `#demo/${docId}`,

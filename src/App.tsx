@@ -188,13 +188,21 @@ export default function App() {
     setSyncedDoc(null);
     setSyncError(null);
 
-    // Guest demo: simulate server-side OCR against the mock workspace, with a
-    // short delay so the READING NOTE… progress bar is visible.
+    // Guest demo: run real local (Tesseract) OCR on the captured photo so the
+    // Demo Document Preview shows the user's actual scanned text, then persist
+    // that text into the mock doc. If OCR yields nothing readable, the service
+    // falls back to sample text so the demo is never empty.
     if (isGuestMode) {
       setIsTranscribing(true);
       try {
-        await new Promise((r) => setTimeout(r, 1800));
-        setTranscription(guestTranscribe(doc.id));
+        let extracted = '';
+        try {
+          extracted = (await transcribeViaTesseract(dataUrl)).text;
+        } catch {
+          // Non-fatal in the demo: fall through with empty text so the
+          // service substitutes its sample, keeping the sandbox usable.
+        }
+        setTranscription(guestTranscribe(doc.id, extracted));
       } finally {
         setIsTranscribing(false);
       }

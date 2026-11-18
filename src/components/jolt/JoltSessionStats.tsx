@@ -25,9 +25,11 @@ export default function JoltSessionStats({
   onMinutesChange,
 }: JoltSessionStatsProps) {
   // Keep Words and Start Time narrow so Duration (hr/min + labels) gets the
-  // largest share of the row and never looks squished.
+  // largest share of the row and never looks squished. `items-start` puts all
+  // three labels on one top baseline; the uniform input height then keeps the
+  // boxes themselves aligned.
   return (
-    <div className="grid grid-cols-[1fr_1.2fr_2.5fr] items-end gap-3">
+    <div className="grid grid-cols-[1fr_1.2fr_2.5fr] items-start gap-3">
       <JoltField label="Words">
         {(id) => (
           <input
@@ -56,14 +58,14 @@ export default function JoltSessionStats({
 
       <JoltField label="Duration">
         {(id) => (
-          <div className={`flex items-stretch gap-1 ${joltFieldHeight}`}>
+          <div className={`flex items-stretch gap-2 ${joltFieldHeight}`}>
             <input
               id={id}
               type="number"
               min={0}
               value={String(durationHours).padStart(2, '0')}
               onChange={(e) => onHoursChange(numeric(e.target.value))}
-              className={`${joltInputClass} box-border h-full min-w-0 px-2 py-0`}
+              className={`jolt-single-line ${joltInputClass} box-border h-full min-w-0 appearance-none px-3 py-0 leading-none`}
               aria-label="Duration hours"
             />
             <span className="self-center font-mono text-xs text-gray-500">hr</span>
@@ -73,7 +75,7 @@ export default function JoltSessionStats({
               max={59}
               value={String(durationMinutes).padStart(2, '0')}
               onChange={(e) => onMinutesChange(numeric(e.target.value))}
-              className={`${joltInputClass} box-border h-full min-w-0 px-2 py-0`}
+              className={`jolt-single-line ${joltInputClass} box-border h-full min-w-0 appearance-none px-3 py-0 leading-none`}
               aria-label="Duration minutes"
             />
             <span className="self-center font-mono text-xs text-gray-500">min</span>

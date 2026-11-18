@@ -60,3 +60,41 @@ body {
   background-color: #f3f4f6;
   padding: 0.1em 0.3em;
 }
+
+/* Single-line Jolt fields (DATE, DOCUMENT, WORDS, START TIME, DURATION, …):
+   iOS/WebKit sizes native date/time/number controls to their own intrinsic
+   height and injects spin buttons and picker indicators, which made the DATE
+   and START TIME boxes taller than their neighbors and pushed their borders
+   into the adjacent field. Normalize those pseudo-elements so every box keeps
+   the shared 40px (h-10) height and the row baselines stay aligned. */
+.jolt-single-line {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.jolt-single-line::-webkit-date-and-time-value {
+  margin: 0;
+  text-align: left;
+  min-height: 0;
+}
+
+.jolt-single-line::-webkit-datetime-edit {
+  padding: 0;
+}
+
+.jolt-single-line::-webkit-calendar-picker-indicator {
+  margin: 0;
+}
+
+/* Hide number spin buttons so WORDS and the hr/min DURATION inputs don't gain
+   extra width/height from the stepper controls. */
+.jolt-single-line::-webkit-inner-spin-button,
+.jolt-single-line::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+.jolt-single-line[type='number'] {
+  -moz-appearance: textfield;
+}

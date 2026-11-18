@@ -206,8 +206,11 @@ export default function SessionForm({
       <div className="flex flex-col gap-4">
         <h1 className="text-sm font-bold uppercase tracking-wide">Add Manual Session</h1>
 
-        {/* Date stays compact (auto width); Document expands to fill the row. */}
-        <div className="grid grid-cols-[auto_1fr] gap-3">
+        {/* Date stays compact (auto width); Document expands to fill the row.
+            `items-start` aligns both columns at the label baseline so the
+            Document cell's "+ Create new document" helper row below the select
+            can't drag the Date field's height or alignment. */}
+        <div className="grid grid-cols-[auto_1fr] items-start gap-3">
           <JoltField label="Date">
             {(id) => (
               <input

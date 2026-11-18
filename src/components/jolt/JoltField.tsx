@@ -7,12 +7,18 @@ export const joltInputClass =
 
 /** Uniform single-line field height, shared across every one-line input so
  *  Date, Document, Words, Start Time, Duration, Title, and Quote align.
- *  Kept compact/low-profile. */
-export const joltFieldHeight = 'box-border h-[38px]';
+ *  `box-border` makes the 40px height include border + padding so every box
+ *  measures identically regardless of content. */
+export const joltFieldHeight = 'box-border h-10';
 
-/** Single-line input/select variant: the base look at the uniform compact
- *  field height, with vertical padding removed so the height is exact. */
-export const joltSingleLineClass = `${joltInputClass} ${joltFieldHeight} py-0`;
+/** Single-line input/select variant: the base look at the uniform field
+ *  height, with vertical padding removed so the height is exact.
+ *  `appearance-none` stops iOS Safari from sizing native date/time/number and
+ *  select controls to their own (taller) intrinsic height, which is what made
+ *  the DATE and START TIME boxes render taller than their neighbors and shove
+ *  their borders into the adjacent field. `leading-none` keeps the text
+ *  vertically centered once the browser's default line-box is removed. */
+export const joltSingleLineClass = `jolt-single-line ${joltInputClass} ${joltFieldHeight} appearance-none py-0 leading-none`;
 
 /** Small bold uppercase field label (DATE, WORDS, TITLE, …). */
 export function JoltLabel({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
