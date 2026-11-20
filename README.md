@@ -6,6 +6,17 @@ A React + Vite web app that captures a handwritten note photo, runs local OCR
 - **Production (GitHub Pages):** https://erinjhu.github.io/jolt-extension/
 - **Companion Chrome extension:** see [`extension/README.md`](extension/README.md)
 
+## Documentation
+
+New here? The [`docs/`](docs/README.md) suite explains the whole app in ~5
+minutes (each page is short and cross-linked):
+
+- [Docs index & architecture overview](docs/README.md)
+- [Auth, Guest Mode & screen state machine](docs/auth-and-routing.md)
+- [Scan Mode & append-only editor flows](docs/scan-and-editor-flows.md)
+- [Codebase module map](docs/module-map.md)
+- [Design system & engineering rules](docs/design-conventions.md)
+
 ## Local development
 
 ```powershell

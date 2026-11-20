@@ -46,26 +46,18 @@ independently, right as the editor mounted after the pick.
 
 ## How it was debugged
 
-1. **Git baseline.** `git log` / `git diff` confirmed `HEAD == origin/main`
-   (the deployed commit) and that all Editor-Mode changes were uncommitted
-   working-tree edits — so "works deployed, fails locally" was a code/runtime
-   difference on top of the same commit, pointing at a dev-only behavior
-   (StrictMode) rather than env vars.
-2. **Scan vs. Editor path.** Both modes share `fetchDocumentText`, but only
-   Editor Mode invokes it (via `TextEditor.loadText`); Scan reads OCR text.
-   This isolated the failure to the editor mount path.
-3. **Targeted instrumentation.** Added temporary `[DIAG]` logs:
-   - Picker `Action.PICKED` callback (picked id, mimeType, appId, token).
-   - Top of `fetchDocumentText` (token presence) + exact HTTP status/body on
-     Docs API and Drive export failures.
-   - `console.trace('[DIAG] RESETTING VIEW …')` in every view-reset path
-     (`handleClearDoc`, `resetFlow`, `handleBackToModes`, `handleSignOut`,
-     guest reset) plus a render-time gate log.
-4. **Read the trace.** The console showed: `picker PICKED` ✓ →
-   `fetchDocumentText` with `hasToken: true` ✓ → immediately
-   `RESETTING VIEW — handleBackToModes`. The stack traced the reset to
-   `TextEditor`'s `leaveRequest` effect firing on mount — the StrictMode
-   double-invoke of the "skip first" guard.
+1. **Git baseline.** `git log` / `git diff` confirmed `HEAD == origin/main`, so
+   the regression lived in uncommitted edits on the deployed commit — a dev-only
+   runtime difference (StrictMode), not env vars.
+2. **Scan vs. Editor path.** Both share `fetchDocumentText`, but only Editor
+   invokes it (`TextEditor.loadText`); Scan reads OCR text. That isolated the
+   failure to the editor mount path.
+3. **Targeted `[DIAG]` logs.** Instrumented the Picker `PICKED` callback and the
+   top of `fetchDocumentText` (token presence + exact HTTP status/body), plus a
+   `console.trace('RESETTING VIEW …')` in every view-reset path.
+4. **Read the trace.** `picker PICKED` ✓ → `fetchDocumentText hasToken: true` ✓
+   → immediately `RESETTING VIEW — handleBackToModes`, with the stack pointing
+   at `TextEditor`'s `leaveRequest` effect firing on mount.
 
 ## The fix
 
@@ -100,3 +92,7 @@ Effects that should run "only on a real change" must compare the triggering
 value (or use an explicit event), not a boolean "first render" flag — a flag is
 defeated by StrictMode's double-invoke and by any remount, producing dev-only
 bugs that silently disappear in production.
+
+---
+
+Prev ← [Design Conventions](design-conventions.md) · [Docs Index](README.md)
