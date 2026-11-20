@@ -89,27 +89,69 @@ function cleanExportedText(raw: string): string {
     .trim();
 }
 
+/** Minimal shape of the Docs API `documents.get` body we read text from. */
+interface DocsApiStructuralElement {
+  paragraph?: {
+    elements?: { textRun?: { content?: string } }[];
+  };
+}
+interface DocsApiDocument {
+  body?: { content?: DocsApiStructuralElement[] };
+}
+
+/** Flatten a Docs API document body into plain text (paragraph text runs). */
+function extractPlainText(doc: DocsApiDocument): string {
+  const parts: string[] = [];
+  for (const el of doc.body?.content ?? []) {
+    for (const run of el.paragraph?.elements ?? []) {
+      if (run.textRun?.content) parts.push(run.textRun.content);
+    }
+  }
+  return cleanExportedText(parts.join(''));
+}
+
 /**
- * Fetch the current plain-text content of an existing Google Doc by exporting
- * it through the Drive API (`GET /drive/v3/files/{fileId}/export`). The export
- * path works under the `drive.file` scope for docs this app created or that
- * the user granted via the Picker, which is why we prefer it over the broader
- * Docs API (`documents.get`).
+ * Fetch the current plain text of an existing Google Doc.
  *
- * @param accessToken OAuth token with the `drive.file` scope.
- * @param fileId      The Google Doc's Drive file id.
- * @returns The document's plain text, cleaned of BOM / carriage-return noise.
+ * Primary path: the Google Docs API (`GET /v1/documents/{id}`), reading text
+ * from `body.content[].paragraph.elements[].textRun.content`. Falls back to
+ * the Drive export endpoint (`/files/{id}/export?mimeType=text/plain`) only if
+ * the Docs API call fails, so a 403 on one path doesn't block the editor.
+ *
+ * The caller surfaces any final failure inline in Editor Mode (it never resets
+ * the active view), so a doc that can't be read shows a message rather than
+ * bouncing the user home.
+ *
+ * @param accessToken OAuth token (Docs API or `drive.file` scope).
+ * @param fileId      The Google Doc's id.
  */
 export async function fetchDocumentText(
   accessToken: string,
   fileId: string,
 ): Promise<string> {
-  const exportUrl = `${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}/export?mimeType=text/plain`;
-  const res = await fetch(exportUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  // Guard against stray whitespace in the id (e.g. from a Picker payload).
+  const cleanId = encodeURIComponent(fileId.trim());
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  // Primary: Google Docs API documents.get.
+  let docsError: string | null = null;
+  try {
+    const res = await fetch(`${DOCS_API_URL}/${cleanId}`, { headers });
+    if (res.ok) {
+      return extractPlainText((await res.json()) as DocsApiDocument);
+    }
+    docsError = `HTTP ${res.status}`;
+  } catch {
+    docsError = 'network error';
+  }
+
+  // Fallback: Drive plain-text export.
+  const exportUrl = `${DRIVE_FILES_URL}/${cleanId}/export?mimeType=text/plain`;
+  const res = await fetch(exportUrl, { headers });
   if (!res.ok) {
-    throw new Error(`Could not load the document text (HTTP ${res.status}).`);
+    throw new Error(
+      `Could not load the document text (Docs API ${docsError}, export HTTP ${res.status}).`,
+    );
   }
   return cleanExportedText(await res.text());
 }
@@ -187,6 +229,106 @@ export async function saveDocumentText(
   });
   if (!res.ok) {
     throw new Error(`Could not save the document (HTTP ${res.status}).`);
+  }
+}
+
+const DOCS_API_URL = 'https://docs.googleapis.com/v1/documents';
+
+/** The body's end index from the Docs API; the body starts at index 1. */
+async function fetchBodyEndIndex(accessToken: string, documentId: string): Promise<number> {
+  const res = await fetch(`${DOCS_API_URL}/${encodeURIComponent(documentId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Could not read the document before appending (HTTP ${res.status}).`);
+  }
+  const body = (await res.json()) as { body?: { content?: { endIndex?: number }[] } };
+  const content = body.body?.content ?? [];
+  return content.reduce((max, seg) => Math.max(max, seg.endIndex ?? 0), 1);
+}
+
+/**
+ * Append `newText` to the end of an existing Google Doc WITHOUT touching any
+ * existing content, so headings, colors, lists, tables, and images are
+ * preserved. Uses the Docs API `insertText` at `endIndex - 1` (just before the
+ * body's trailing newline) rather than a full overwrite.
+ *
+ * Returns the index at which the appended text starts, so the caller can
+ * re-append on subsequent auto-saves by first removing only the previously
+ * appended range (see `replaceAppendedRange`).
+ *
+ * NOTE: unlike `saveDocumentText` (Drive media), this requires the Google Docs
+ * API to be enabled on the Cloud project.
+ *
+ * @returns The start index of the inserted text within the document body.
+ */
+export async function appendDocumentText(
+  accessToken: string,
+  documentId: string,
+  newText: string,
+): Promise<number> {
+  const endIndex = await fetchBodyEndIndex(accessToken, documentId);
+  // Body is empty when endIndex <= 2 (just the mandatory trailing newline).
+  const isEmpty = endIndex <= 2;
+  const insertIndex = Math.max(1, endIndex - 1);
+  const payload = isEmpty || !newText ? newText : `\n\n${newText}`;
+  if (!payload) return insertIndex;
+
+  const res = await fetch(`${DOCS_API_URL}/${encodeURIComponent(documentId)}:batchUpdate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      requests: [{ insertText: { location: { index: insertIndex }, text: payload } }],
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Could not append to the document (HTTP ${res.status}).`);
+  }
+  // The visible appended text starts after the "\n\n" prefix (when present).
+  return insertIndex + (isEmpty || !newText ? 0 : 2);
+}
+
+/**
+ * Update only the previously appended session text: delete everything from
+ * `appendStart` to the end of the body, then insert the current `newText`.
+ * Content before `appendStart` (the user's pre-existing document) is never
+ * touched. Used by the append-only editor's debounced auto-save so repeated
+ * saves don't duplicate the appended block.
+ *
+ * @param appendStart The body index where this session's appended text begins.
+ */
+export async function replaceAppendedRange(
+  accessToken: string,
+  documentId: string,
+  appendStart: number,
+  newText: string,
+): Promise<void> {
+  const endIndex = await fetchBodyEndIndex(accessToken, documentId);
+  const requests: unknown[] = [];
+  // Remove the old appended block (if any) without crossing into prior content.
+  if (endIndex - 1 > appendStart) {
+    requests.push({
+      deleteContentRange: { range: { startIndex: appendStart, endIndex: endIndex - 1 } },
+    });
+  }
+  if (newText) {
+    requests.push({ insertText: { location: { index: appendStart }, text: newText } });
+  }
+  if (requests.length === 0) return;
+
+  const res = await fetch(`${DOCS_API_URL}/${encodeURIComponent(documentId)}:batchUpdate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ requests }),
+  });
+  if (!res.ok) {
+    throw new Error(`Could not update the appended text (HTTP ${res.status}).`);
   }
 }
 

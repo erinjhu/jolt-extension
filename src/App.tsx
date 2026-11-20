@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import AppHeader from './components/AppHeader';
+import { useState } from 'react';
+import AppTopBar from './components/AppTopBar';
 import type { AppTab } from './components/ModeToggle';
 import ModeSelectionLanding from './components/ModeSelectionLanding';
 import ScanTabView from './components/ScanTabView';
@@ -18,23 +18,16 @@ import {
 import { useGoogleAuth } from './hooks/useGoogleAuth';
 import { useHashRoute } from './hooks/useHashRoute';
 import { defaultSessionTitle } from './utils/sessionDefaults';
-import { silentRefresh } from './services/googleAuth';
-import {
-  fetchDocumentFolderName,
-  fetchDocumentText,
-  saveDocumentText,
-  type CreatedDoc,
-} from './services/googleDocsService';
+import { useTokenRetry } from './hooks/useTokenRetry';
+import type { CreatedDoc } from './services/googleDocsService';
 import {
   GUEST_USER,
-  guestFolderName,
   guestLoadText,
-  guestSaveText,
   guestSyncSession,
   guestTranscribe,
 } from './services/guestDemoService';
+import { useDocumentSync } from './hooks/useDocumentSync';
 import { useGuestMode } from './hooks/useGuestMode';
-import GuestBadge from './components/GuestBadge';
 import DemoDocPreview from './components/DemoDocPreview';
 import type { WritingSessionMetrics } from './hooks/useWritingSession';
 import type { TargetDoc } from './services/joltDocumentsService';
@@ -67,6 +60,9 @@ export default function App() {
     'closed',
   );
   const [scanDiscardFolder, setScanDiscardFolder] = useState('My Drive');
+  // Bumped by the header "Go home" action to ask the live editor to run its
+  // ← BACK guard (so an active editor session shows the discard/save modal).
+  const [homeNonce, setHomeNonce] = useState(0);
   // Guest demo mode: no Google account, all Drive/Docs calls run in-memory.
   // Owned by a dedicated hook; enter/exit reset the flow + mock workspace.
   const { isGuestMode, showDocPreview, setShowDocPreview, enterGuestMode, exitGuestMode } =
@@ -97,26 +93,9 @@ export default function App() {
     return (await fetch(dataUrl)).blob();
   }
 
-  /** True when an error looks like an expired/invalid token (HTTP 401). */
-  function isAuthError(err: unknown): boolean {
-    return err instanceof Error && /\b401\b|unauthorized/i.test(err.message);
-  }
-
-  /**
-   * Run a Drive operation, and if it fails with a 401, silently refresh the
-   * token once and retry. Keeps the user signed in across token expiry.
-   */
-  async function withTokenRetry<T>(run: (token: string) => Promise<T>): Promise<T> {
-    if (!googleUser) throw new Error('Sign in with Google above first.');
-    try {
-      return await run(googleUser.accessToken);
-    } catch (err) {
-      if (!isAuthError(err)) throw err;
-      const refreshed = await silentRefresh();
-      setGoogleUser(refreshed);
-      return run(refreshed.accessToken);
-    }
-  }
+  // Supplies a valid OAuth token to Drive/Docs calls, refreshing on 401-style
+  // auth errors (Drive "HTTP 401" and Docs "UNAUTHENTICATED"/"CREDENTIALS_MISSING").
+  const withTokenRetry = useTokenRetry(googleUser, setGoogleUser);
 
   /** A document was chosen; open whichever tab is active in the bottom nav. */
   function handleSelectDoc(doc: TargetDoc) {
@@ -130,45 +109,17 @@ export default function App() {
     setTranscription(null);
     setTranscribeError(null);
     setEditorSession(null);
+    resetAppendAnchor();
   }
 
-  /**
-   * Load the plain text of a document for the editor, refreshing the token
-   * once on a 401. Memoized so TextEditor's effect only re-runs when the
-   * target doc changes, not on every App render.
-   */
-  const loadDocumentText = useCallback(
-    (fileId: string) =>
-      isGuestMode
-        ? Promise.resolve(guestLoadText(fileId))
-        : withTokenRetry((token) => fetchDocumentText(token, fileId)),
-    // withTokenRetry closes over googleUser; re-create when the user changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [googleUser, isGuestMode],
-  );
-
-  /** Save editor text back to the Google Doc (or the mock doc in demo mode). */
-  const saveDocumentTextFn = useCallback(
-    (fileId: string, newText: string) => {
-      if (isGuestMode) {
-        guestSaveText(fileId, newText);
-        return Promise.resolve();
-      }
-      return withTokenRetry((token) => saveDocumentText(token, fileId, newText));
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [googleUser, isGuestMode],
-  );
-
-  /** Resolve the document's folder name (mock in demo mode). */
-  const loadDocumentFolderName = useCallback(
-    (fileId: string) =>
-      isGuestMode
-        ? Promise.resolve(guestFolderName())
-        : withTokenRetry((token) => fetchDocumentFolderName(token, fileId)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [googleUser, isGuestMode],
-  );
+  // All document read/write ops (Drive/Docs + Guest mock) behind one hook.
+  const {
+    loadDocumentText,
+    saveDocumentText: saveDocumentTextFn,
+    appendDocumentText: appendDocumentTextFn,
+    loadDocumentFolderName,
+    resetAppendAnchor,
+  } = useDocumentSync(isGuestMode, withTokenRetry);
 
   /**
    * Finish a TEXT EDITOR session: the editor has already paused its timer and
@@ -258,6 +209,7 @@ export default function App() {
     setTranscribeError(null);
     setSyncedDoc(null);
     setSyncError(null);
+    resetAppendAnchor();
     // Bump the key so PhotoCapture (which holds its own preview state)
     // remounts clean, clearing the previous image preview.
     setFlowKey((k) => k + 1);
@@ -310,6 +262,26 @@ export default function App() {
   function handleScanDiscardedOk() {
     setScanLeaveStage('closed');
     handleBackToModes();
+  }
+
+  /**
+   * Header logo/name clicked: return to the mode-selection home, routing
+   * through the existing session guards so active work isn't lost. A live
+   * editor session runs the editor's ← BACK guard (via the nonce); scan work
+   * opens the scan leave confirmation; otherwise go straight home.
+   */
+  function handleGoHome() {
+    if (!hasChosenInitialMode || isSynced) {
+      handleBackToModes();
+      return;
+    }
+    if (activeTab === 'editor' && selectedDoc && !editorSession) {
+      setHomeNonce((n) => n + 1);
+    } else if (activeTab === 'scan' && hasImage) {
+      handleScanBack();
+    } else {
+      handleBackToModes();
+    }
   }
 
   /** Sign out and make the next sign-in start at the mode landing again. */
@@ -416,21 +388,21 @@ export default function App() {
 
   return (
     <>
-      {isGuestMode ? (
-        <GuestBadge onExit={exitGuestMode} />
-      ) : (
-        <AppHeader
-          user={googleUser!}
-          isBusy={isAuthBusy}
-          error={authError}
-          onSignOut={handleSignOut}
-          onSwitchAccount={switchAccount}
-        />
-      )}
+      <AppTopBar
+        isGuest={isGuestMode}
+        user={googleUser!}
+        isBusy={isAuthBusy}
+        error={authError}
+        onSignOut={handleSignOut}
+        onSwitchAccount={switchAccount}
+        onExitGuest={exitGuestMode}
+        onHome={handleGoHome}
+      />
       <main className="mx-auto flex min-h-full max-w-xl flex-col gap-6 px-4 py-6">
-        {!hasChosenInitialMode ? (
-          <ModeSelectionLanding onChoose={handleChooseInitialMode} />
-        ) : isSynced ? (
+        {/* An active `selectedDoc` is checked before the mode-landing
+            fallback, so a stray `hasChosenInitialMode` reset (e.g. around the
+            Picker round-trip) can't bounce the user back to the home screen. */}
+        {isSynced ? (
           <SyncConfirmation
             doc={syncedDoc}
             onStartNewSession={resetFlow}
@@ -467,18 +439,22 @@ export default function App() {
                   doc={selectedDoc}
                   loadText={loadDocumentText}
                   saveText={saveDocumentTextFn}
+                  appendText={appendDocumentTextFn}
                   loadFolderName={loadDocumentFolderName}
                   isActive={activeTab === 'editor'}
                   onChangeDoc={handleClearDoc}
                   onBack={handleBackToModes}
                   onFinish={handleFinishSession}
                   isGuest={isGuestMode}
+                  leaveRequest={homeNonce}
                 />
               )}
             </div>
           </>
+        ) : !hasChosenInitialMode ? (
+          <ModeSelectionLanding onChoose={handleChooseInitialMode} />
         ) : (
-          // No target doc yet: show the document-selection landing.
+          // Mode chosen but no target doc yet: the document-selection landing.
           <>
             <button
               type="button"

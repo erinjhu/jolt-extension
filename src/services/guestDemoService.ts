@@ -139,6 +139,23 @@ export function guestSaveText(fileId: string, newText: string): void {
   if (doc) doc.text = newText;
 }
 
+/**
+ * Append-only save for existing mock docs: set the body to the preserved
+ * `baseText` plus this session's `appendText` (blank-line separated when both
+ * are non-empty). Idempotent across auto-saves since it rebuilds from the
+ * fixed base each time, so the Demo Document Preview shows the original
+ * content followed by the newly appended text.
+ */
+export function guestSetAppendedText(fileId: string, baseText: string, appendText: string): void {
+  const doc = findDoc(fileId);
+  if (!doc) return;
+  if (!appendText) {
+    doc.text = baseText;
+    return;
+  }
+  doc.text = baseText ? `${baseText}\n\n${appendText}` : appendText;
+}
+
 /** Guest equivalent of `fetchDocumentFolderName`. */
 export function guestFolderName(): string {
   return GUEST_FOLDER_NAME;

@@ -23,7 +23,13 @@ import {
 
 /** The OAuth scopes this app requests. */
 export const OAUTH_SCOPES = [
+  // Per-file Drive access: the app's own docs + any file picked via the
+  // Picker (which must be configured with setAppId for the grant to stick).
   'https://www.googleapis.com/auth/drive.file',
+  // Read/append picked Google Docs through the Docs API (documents.get /
+  // documents.batchUpdate); without this the token is rejected on
+  // docs.googleapis.com with 401 CREDENTIALS_MISSING.
+  'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
 ].join(' ');

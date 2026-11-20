@@ -106,9 +106,11 @@ export default function DocumentSelector({
       const created = isGuest
         ? guestCreateDoc(title)
         : await createTargetDoc(accessToken, title, destFolder?.id);
-      const doc = { id: created.id, name: created.name };
-      setDocs((prev) => [doc, ...prev]);
-      onSelect(doc);
+      const listed = { id: created.id, name: created.name };
+      setDocs((prev) => [listed, ...prev]);
+      // Flag as new ONLY for this immediate selection, so it opens the full
+      // editor; if picked again later from the list it counts as existing.
+      onSelect({ ...listed, isNew: true });
       setIsCreating(false);
       setNewTitle('');
     } catch {

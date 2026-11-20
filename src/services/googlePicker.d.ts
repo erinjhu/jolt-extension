@@ -32,6 +32,8 @@ declare global {
     addView: (view: GooglePickerDocsView) => GooglePickerBuilder;
     setOAuthToken: (token: string) => GooglePickerBuilder;
     setDeveloperKey: (key: string) => GooglePickerBuilder;
+    /** Google Cloud project number, so drive.file grants persist for picks. */
+    setAppId: (appId: string) => GooglePickerBuilder;
     setCallback: (cb: (data: GooglePickerResponse) => void) => GooglePickerBuilder;
     build: () => GooglePickerInstance;
   }

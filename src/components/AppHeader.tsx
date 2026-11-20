@@ -10,6 +10,8 @@ interface AppHeaderProps {
   onSignOut: () => void;
   /** Resolves true when a different account was chosen successfully. */
   onSwitchAccount: () => Promise<boolean>;
+  /** Clicking the logo/name returns to the mode-selection home screen. */
+  onHome: () => void;
 }
 
 /**
@@ -24,6 +26,7 @@ export default function AppHeader({
   error,
   onSignOut,
   onSwitchAccount,
+  onHome,
 }: AppHeaderProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -53,10 +56,15 @@ export default function AppHeader({
   return (
     <header className="sticky top-0 z-30 border-b border-[#111111] bg-[#FFFFFF] text-[#111111]">
       <div className="mx-auto flex h-14 max-w-xl items-center justify-between px-4">
-        <span className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onHome}
+          aria-label="Go to home"
+          className="flex cursor-pointer items-center gap-2 rounded-none bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2"
+        >
           <JoltLogoIcon size={24} title="Jolt" />
           <span className="pl-[0.35em] text-lg font-bold tracking-[0.35em]">JOLT</span>
-        </span>
+        </button>
 
         <div ref={containerRef} className="relative">
           <button

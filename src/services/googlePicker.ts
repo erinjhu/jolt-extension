@@ -16,11 +16,24 @@ interface PickerResponse {
   docs?: Array<{ id: string; name: string }>;
 }
 
+import { resolveClientId } from './clientIdStore';
+
 const GAPI_SRC = 'https://apis.google.com/js/api.js';
 const DOC_MIME = 'application/vnd.google-apps.document';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 const apiKey = (import.meta.env.VITE_GOOGLE_API_KEY ?? '').trim();
+
+/**
+ * The Google Cloud project NUMBER, set on the PickerBuilder via `setAppId` so a
+ * Picker selection grants this app `drive.file` read/write access to the chosen
+ * file — without it, reading a picked doc 403s. Prefer an explicit
+ * `VITE_GOOGLE_APP_ID`; otherwise derive it from the OAuth client ID's numeric
+ * prefix (`{projectNumber}-xxxx.apps.googleusercontent.com`). Empty string when
+ * neither is available.
+ */
+const explicitAppId = (import.meta.env.VITE_GOOGLE_APP_ID ?? '').trim();
+const appId = explicitAppId || resolveClientId().split('-')[0] || '';
 
 /** True when an API key is configured, so the Picker can run. */
 export function isPickerConfigured(): boolean {
@@ -69,10 +82,12 @@ export async function pickGoogleDoc(accessToken: string): Promise<TargetDoc | nu
 
   return new Promise<TargetDoc | null>((resolve) => {
     const view = new picker.DocsView(picker.ViewId.DOCUMENTS).setMimeTypes(DOC_MIME);
-    const instance = new picker.PickerBuilder()
+    let builder = new picker.PickerBuilder()
       .addView(view)
       .setOAuthToken(accessToken)
-      .setDeveloperKey(apiKey)
+      .setDeveloperKey(apiKey);
+    if (appId) builder = builder.setAppId(appId);
+    const instance = builder
       .setCallback((data: PickerResponse) => {
         if (data.action === picker.Action.PICKED) {
           const doc = data.docs?.[0];
@@ -103,10 +118,12 @@ export async function pickGoogleFolder(accessToken: string): Promise<TargetDoc |
     const view = new picker.DocsView(picker.ViewId.FOLDERS)
       .setSelectFolderEnabled(true)
       .setMimeTypes(FOLDER_MIME);
-    const instance = new picker.PickerBuilder()
+    let builder = new picker.PickerBuilder()
       .addView(view)
       .setOAuthToken(accessToken)
-      .setDeveloperKey(apiKey)
+      .setDeveloperKey(apiKey);
+    if (appId) builder = builder.setAppId(appId);
+    const instance = builder
       .setCallback((data: PickerResponse) => {
         if (data.action === picker.Action.PICKED) {
           const folder = data.docs?.[0];

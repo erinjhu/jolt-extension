@@ -14,6 +14,12 @@ const DOC_MIME = 'application/vnd.google-apps.document';
 export interface TargetDoc {
   id: string;
   name: string;
+  /**
+   * True only for docs this session just created (via "+ Create New Doc").
+   * New docs get the full-overwrite editor; existing docs (recents, Picker,
+   * seeded demo docs) open in append-only mode to preserve their formatting.
+   */
+  isNew?: boolean;
 }
 
 /** Escape a value for safe interpolation into a Drive `q` query string. */

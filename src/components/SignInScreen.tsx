@@ -1,4 +1,5 @@
 import { hasClientId } from '../services/clientIdStore';
+import { navigateHash } from '../hooks/useHashRoute';
 import JoltLogoIcon from './jolt/JoltLogoIcon';
 
 interface SignInScreenProps {
@@ -26,9 +27,16 @@ export default function SignInScreen({ isBusy, error, onSignIn, onGuestMode }: S
     <main className="flex min-h-dvh w-full items-center justify-center bg-[#FFFFFF] px-6 py-10 text-[#111111]">
       <section className="flex w-full max-w-sm flex-col gap-8 rounded-none border border-[#111111] p-8">
         <div className="flex flex-col items-center gap-3 text-center">
-          <JoltLogoIcon size={48} title="Jolt" />
-          {/* Right padding offsets the trailing letter-space so JOLT looks centered. */}
-          <h1 className="pl-[0.35em] text-4xl font-bold tracking-[0.35em]">JOLT</h1>
+          <button
+            type="button"
+            onClick={() => navigateHash('/')}
+            aria-label="Go to home"
+            className="flex cursor-pointer flex-col items-center gap-3 rounded-none bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2"
+          >
+            <JoltLogoIcon size={48} title="Jolt" />
+            {/* Right padding offsets the trailing letter-space so JOLT looks centered. */}
+            <h1 className="pl-[0.35em] text-4xl font-bold tracking-[0.35em]">JOLT</h1>
+          </button>
           <p className="font-mono text-xs leading-relaxed text-gray-600">
             Track your writing from your phone
           </p>

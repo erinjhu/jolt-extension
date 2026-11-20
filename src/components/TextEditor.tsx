@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'reac
 import { countWords } from '../utils/text';
 import { useWritingSession, type WritingSessionMetrics } from '../hooks/useWritingSession';
 import EditorStatsBar from './EditorStatsBar';
+import ExistingDocContext from './ExistingDocContext';
 import LeaveSessionModal from './LeaveSessionModal';
 import type { TargetDoc } from '../services/joltDocumentsService';
 
@@ -26,8 +27,17 @@ interface TextEditorProps {
   doc: TargetDoc;
   /** Export the document's current plain text (OAuth-aware, token-retrying). */
   loadText: (fileId: string) => Promise<string>;
-  /** Overwrite the Google Doc's content (OAuth-aware, token-retrying). */
+  /**
+   * Overwrite the Google Doc's content (OAuth-aware, token-retrying). Used for
+   * NEW docs only — full-document editing.
+   */
   saveText: (fileId: string, text: string) => Promise<void>;
+  /**
+   * Append-only save for EXISTING docs: persist `appendText` after the
+   * preserved `baseText`, never overwriting the original body/formatting.
+   * Required when the opened doc is not new (doc.isNew !== true).
+   */
+  appendText?: (fileId: string, baseText: string, appendText: string) => Promise<void>;
   /**
    * Resolve the document's Drive folder name (OAuth-aware). Defaults to
    * "My Drive" on error. Used in the post-discard confirmation message.
@@ -49,19 +59,32 @@ interface TextEditorProps {
   onFinish: (summary: { metrics: WritingSessionMetrics; text: string }) => void;
   /** Guest demo: show "Saved locally (Demo)" instead of "Saved to Drive". */
   isGuest?: boolean;
+  /**
+   * Incrementing counter used by the header "Go home" action to request a
+   * leave: when it changes the editor runs its own ← BACK guard (showing the
+   * discard/save confirmation when there's an active session).
+   */
+  leaveRequest?: number;
 }
 
 export default function TextEditor({
   doc,
   loadText,
   saveText,
+  appendText,
   loadFolderName,
   isActive,
   onBack,
   onFinish,
   isGuest = false,
+  leaveRequest = 0,
 }: TextEditorProps) {
+  // Existing docs open append-only to preserve their formatting; only newly
+  // created docs get full-document overwrite editing.
+  const isNewDoc = doc.isNew === true;
   const [text, setText] = useState('');
+  // Preserved read-only body of an existing doc (empty for new docs).
+  const [baseText, setBaseText] = useState('');
   const [initialWordCount, setInitialWordCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -108,15 +131,36 @@ export default function TextEditor({
     loadText(doc.id)
       .then((loaded) => {
         if (cancelled) return;
-        setText(loaded);
-        setInitialWordCount(countWords(loaded));
-        // The freshly loaded text is, by definition, already in Drive.
-        lastSavedTextRef.current = loaded;
+        if (isNewDoc) {
+          // New doc: edit the whole body; metrics count from its current words.
+          setText(loaded);
+          setInitialWordCount(countWords(loaded));
+          lastSavedTextRef.current = loaded;
+        } else {
+          // Existing doc: keep the body read-only; the append box starts empty
+          // and metrics count only the newly appended text (initial = 0).
+          setBaseText(loaded);
+          setText('');
+          setInitialWordCount(0);
+          lastSavedTextRef.current = '';
+        }
         setSaveStatus('saved');
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Could not load the document.');
+        // Keep the user in Editor Mode and surface a clear inline message; a
+        // 403 usually means the Docs API isn't enabled or the file wasn't
+        // granted to this app. Never reset the active view on a load failure.
+        const raw = err instanceof Error ? err.message : '';
+        let message = raw || 'Could not load the document.';
+        if (/\b403\b/.test(raw)) {
+          message =
+            'Unable to load this Google Doc (403 Permission Denied). Make sure the Google Docs API is enabled, or try another document.';
+        } else if (/\b401\b|unauthenticated|credentials_missing/i.test(raw)) {
+          message =
+            'Unable to load this Google Doc (401 — your session needs re-authorization). Please sign in again, then reopen the document.';
+        }
+        setError(message);
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -124,7 +168,7 @@ export default function TextEditor({
     return () => {
       cancelled = true;
     };
-  }, [doc.id, loadText]);
+  }, [doc.id, loadText, isNewDoc]);
 
   /**
    * Persist the current text to the Google Doc if it differs from the last
@@ -137,7 +181,14 @@ export default function TextEditor({
     savingRef.current = true;
     setSaveStatus('saving');
     try {
-      await saveText(doc.id, pending);
+      if (isNewDoc) {
+        // New doc: overwrite the whole body.
+        await saveText(doc.id, pending);
+      } else {
+        // Existing doc: append-only — never overwrite the preserved body.
+        if (!appendText) throw new Error('Append save is not available.');
+        await appendText(doc.id, baseText, pending);
+      }
       lastSavedTextRef.current = pending;
       if (!mountedRef.current) return;
       // If the user kept typing while we saved, we're dirty again.
@@ -150,7 +201,7 @@ export default function TextEditor({
     } finally {
       savingRef.current = false;
     }
-  }, [doc.id, saveText]);
+  }, [doc.id, saveText, appendText, isNewDoc, baseText]);
 
   function handleChange(e: ChangeEvent<HTMLTextAreaElement>) {
     const next = e.target.value;
@@ -209,6 +260,20 @@ export default function TextEditor({
     }
     onBack();
   }
+
+  // Header "Go home" requested a leave: run the same guard as the ← BACK
+  // button. Compare against the last-seen value (seeded to the initial
+  // `leaveRequest`) so this fires ONLY when the nonce actually increments —
+  // never on mount, and never on StrictMode's double-invoke of the effect,
+  // which previously bounced the user home right after picking a doc.
+  const lastLeaveRef = useRef(leaveRequest);
+  useEffect(() => {
+    if (leaveRequest === lastLeaveRef.current) return;
+    lastLeaveRef.current = leaveRequest;
+    handleBack();
+    // handleBack is stable for this intent; only react to a changed nonce.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaveRequest]);
 
   /** Modal: FINISH & SAVE — same as the Finish Session action. */
   async function handleConfirmFinish() {
@@ -306,14 +371,31 @@ export default function TextEditor({
         </p>
       )}
 
-      {/* Full-height distraction-free editing surface. */}
+      {/* Existing docs: read-only context above + labeled append box below.
+          New docs: a single full-document editing surface. */}
+      {!isNewDoc && !isLoading && (
+        <>
+          <ExistingDocContext text={baseText} />
+          <span className="px-4 pt-4 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+            New Text to Append
+          </span>
+        </>
+      )}
       <textarea
         value={text}
         onChange={handleChange}
         disabled={isLoading}
-        placeholder={isLoading ? 'Loading document…' : 'Start writing…'}
+        placeholder={
+          isLoading
+            ? 'Loading document…'
+            : isNewDoc
+              ? 'Start writing…'
+              : 'Write your new session text here…'
+        }
         spellCheck
-        className="min-h-[50vh] w-full flex-1 resize-none rounded-none border-0 bg-white px-4 py-4 font-mono text-sm leading-relaxed text-black outline-none disabled:opacity-60"
+        className={`w-full flex-1 resize-none rounded-none border-0 bg-white px-4 py-4 font-mono text-sm leading-relaxed text-black outline-none disabled:opacity-60 ${
+          isNewDoc ? 'min-h-[50vh]' : 'min-h-[30vh]'
+        }`}
       />
 
       {/* Primary action: finish, final-save, go to the logging screen. */}
