@@ -7,6 +7,7 @@ import SessionLoggingView from './components/SessionLoggingView';
 import SignInScreen from './components/SignInScreen';
 import PrivacyPage from './components/legal/PrivacyPage';
 import TermsPage from './components/legal/TermsPage';
+import DocsPage from './components/docs/DocsPage';
 import SyncConfirmation from './components/SyncConfirmation';
 import TextEditor from './components/TextEditor';
 import { syncSessionToDrive } from './services/syncSessionToDrive';
@@ -334,6 +335,7 @@ export default function App() {
   // so Google OAuth reviewers and users can open them directly.
   if (route === '/privacy') return <PrivacyPage />;
   if (route === '/terms') return <TermsPage />;
+  if (route === '/docs' || route.startsWith('/docs/')) return <DocsPage route={route} />;
 
   // Strict auth gate. Nothing else renders until there is a valid session.
   if (isRestoring) {
@@ -466,6 +468,27 @@ export default function App() {
             {renderScanTab()}
           </>
         )}
+
+        {/* Subtle footer: legal pages + in-app docs, on every signed-in screen. */}
+        <footer className="mt-auto flex items-center justify-center gap-4 border-t border-[#111111] pt-6 font-mono text-xs text-gray-500">
+          <a
+            href={`${import.meta.env.BASE_URL}privacy.html`}
+            className="underline underline-offset-4 transition hover:text-[#111111]"
+          >
+            Privacy Policy
+          </a>
+          <span aria-hidden="true">·</span>
+          <a
+            href={`${import.meta.env.BASE_URL}terms.html`}
+            className="underline underline-offset-4 transition hover:text-[#111111]"
+          >
+            Terms of Service
+          </a>
+          <span aria-hidden="true">·</span>
+          <a href="#/docs" className="underline underline-offset-4 transition hover:text-[#111111]">
+            Docs
+          </a>
+        </footer>
       </main>
 
       {/* Guest demo: in-app document viewer, opened from any "open doc"

@@ -88,6 +88,10 @@ export default function SignInScreen({ isBusy, error, onSignIn, onGuestMode }: S
           >
             Terms of Use
           </a>
+          <span aria-hidden="true">·</span>
+          <a href="#/docs" className="underline underline-offset-4 transition hover:text-[#111111]">
+            Docs
+          </a>
         </footer>
       </section>
     </main>
