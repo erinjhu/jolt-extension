@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { navigateHash } from '../../hooks/useHashRoute';
 import { renderDocMarkdown } from '../../utils/docMarkdown';
 import { DOC_PAGES, resolveDocPage } from './docsRegistry';
+import JoltLogoIcon from '../jolt/JoltLogoIcon';
 
 interface DocsPageProps {
   /** Current hash route, e.g. "/docs" or "/docs/module-map". */
@@ -25,17 +26,30 @@ export default function DocsPage({ route }: DocsPageProps) {
   const bodyHtml = useMemo(() => renderDocMarkdown(page.markdown), [page.markdown]);
 
   return (
-    <main className="min-h-dvh w-full bg-[#FFFFFF] px-6 py-10 text-[#111111]">
-      <div className="mx-auto flex w-full max-w-[760px] flex-col gap-8">
-        <button
-          type="button"
-          onClick={() => navigateHash('/')}
-          className="self-start rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
-        >
-          ← Back to App
-        </button>
-
-        {/* Doc nav bar: all pages, active one inverted. */}
+    <div className="min-h-dvh w-full bg-[#FFFFFF] text-[#111111]">
+      <header className="sticky top-0 z-30 border-b border-[#111111] bg-[#FFFFFF] text-[#111111]">
+        <div className="mx-auto flex h-14 max-w-[760px] items-center justify-between px-4">
+          <button
+            type="button"
+            onClick={() => navigateHash('/')}
+            aria-label="Go to home"
+            className="flex cursor-pointer items-center gap-2 rounded-none bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2"
+          >
+            <JoltLogoIcon size={24} title="Jolt Extension" />
+            <span className="text-lg font-bold tracking-tight">Jolt Extension</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigateHash('/')}
+            className="rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
+          >
+            ← Back to App
+          </button>
+        </div>
+      </header>
+      <main className="px-6 py-10">
+        <div className="mx-auto flex w-full max-w-[760px] flex-col gap-8">
+          {/* Doc nav bar: all pages, active one inverted. */}
         <nav className="flex flex-wrap gap-2">
           {DOC_PAGES.map((p) => {
             const active = p.slug === page.slug;
@@ -86,5 +100,6 @@ export default function DocsPage({ route }: DocsPageProps) {
         </nav>
       </div>
     </main>
+  </div>
   );
 }

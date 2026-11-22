@@ -5,6 +5,7 @@ import {
   signIn as requestSignIn,
   signOut as requestSignOut,
   switchAccount as requestSwitchAccount,
+  UserCancelledError,
   type GoogleUser,
 } from '../services/googleAuth';
 
@@ -77,6 +78,8 @@ export function useGoogleAuth(): GoogleAuthState {
     try {
       setUser(await requestSignIn());
     } catch (err) {
+      // User closed the popup — not a real failure; reset silently.
+      if (err instanceof UserCancelledError) return;
       setError(err instanceof Error ? err.message : 'Sign-in failed.');
     } finally {
       setIsBusy(false);
@@ -101,6 +104,8 @@ export function useGoogleAuth(): GoogleAuthState {
       setUser(await requestSwitchAccount());
       return true;
     } catch (err) {
+      // User closed the popup — not a real failure; reset silently.
+      if (err instanceof UserCancelledError) return false;
       setError(err instanceof Error ? err.message : 'Could not switch account.');
       return false;
     } finally {

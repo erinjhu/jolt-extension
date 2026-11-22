@@ -8,9 +8,9 @@ const MODES: { id: AppTab; title: string; subtitle: string; description: string;
   {
     id: 'scan',
     title: 'SCAN',
-    subtitle: 'IMPORT PAPER WRITING TO JOLT',
+    subtitle: 'IMPORT PAPER WRITING TO JOLT EXTENSION',
     description:
-      'Scan handwritten pages. Automatically create a Google Doc and Jolt session.',
+      'Scan handwritten pages. Automatically create a Google Doc and Jolt Extension session.',
     cta: 'START SCANNING',
   },
   {
@@ -18,7 +18,7 @@ const MODES: { id: AppTab; title: string; subtitle: string; description: string;
     title: 'EDITOR',
     subtitle: 'WRITE ON YOUR PHONE NOW',
     description:
-      'Write straight on your phone with live stats. Automatically sync it to Google Docs and Jolt.',
+      'Write straight on your phone with live stats. Automatically sync it to Google Docs and Jolt Extension.',
     cta: 'OPEN EDITOR',
   },
 ];

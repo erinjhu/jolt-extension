@@ -20,8 +20,8 @@ export default function GuestBadge({ onExit, onHome }: GuestBadgeProps) {
         aria-label="Go to home"
         className="flex cursor-pointer items-center gap-2 rounded-none bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2"
       >
-        <JoltLogoIcon size={24} title="Jolt" />
-        <span className="pl-[0.35em] text-lg font-bold tracking-[0.35em]">JOLT</span>
+        <JoltLogoIcon size={24} title="Jolt Extension" />
+        <span className="text-lg font-bold tracking-tight">Jolt Extension</span>
       </button>
       <span className="flex items-center gap-2">
         <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">

@@ -33,33 +33,36 @@ export default function SignInScreen({ isBusy, error, onSignIn, onGuestMode }: S
             aria-label="Go to home"
             className="flex cursor-pointer flex-col items-center gap-3 rounded-none bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2"
           >
-            <JoltLogoIcon size={48} title="Jolt" />
-            {/* Right padding offsets the trailing letter-space so JOLT looks centered. */}
-            <h1 className="pl-[0.35em] text-4xl font-bold tracking-[0.35em]">JOLT</h1>
+            <JoltLogoIcon size={48} title="Jolt Extension" />
+            <h1 className="text-3xl font-bold tracking-tight">Jolt Extension</h1>
           </button>
           <p className="font-mono text-xs leading-relaxed text-gray-600">
-            Track your writing from your phone
+            Jolt Extension is a companion web app for the Jolt Chrome extension to track your writing from your phone.
           </p>
         </div>
 
         <div className="flex flex-col gap-3">
           <button
             type="button"
-            onClick={onSignIn}
+            onClick={onGuestMode}
             disabled={isBusy}
-            className="w-full rounded-none bg-[#111111] px-6 py-4 text-sm font-bold uppercase tracking-wide text-[#FFFFFF] transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-none border border-[#111111] bg-[#111111] px-6 py-4 text-sm font-bold uppercase tracking-wide text-[#FFFFFF] transition hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isBusy ? 'Signing in…' : 'Sign in with Google'}
+            Try Interactive Demo
           </button>
 
           <button
             type="button"
-            onClick={onGuestMode}
+            onClick={onSignIn}
             disabled={isBusy}
-            className="w-full rounded-none border border-[#111111] bg-[#FFFFFF] px-6 py-4 text-sm font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-none border border-[#111111] bg-[#FFFFFF] px-6 py-4 text-sm font-bold uppercase tracking-wide text-[#111111] transition hover:bg-[#FAFAFA] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Try Demo as Guest
+            {isBusy ? 'Signing in…' : 'Sign in with Google'}
           </button>
+
+          <p className="text-center font-mono text-xs leading-relaxed text-[#666666]">
+            Beta: If Google shows an unverified app screen, click "Advanced" → "Go to Jolt Extension" to continue.
+          </p>
         </div>
 
         {error && (
@@ -74,24 +77,29 @@ export default function SignInScreen({ isBusy, error, onSignIn, onGuestMode }: S
           </p>
         )}
 
-        <footer className="flex items-center justify-center gap-4 border-t border-[#111111] pt-6 font-mono text-xs text-gray-600">
-          <a
-            href={`${import.meta.env.BASE_URL}privacy.html`}
-            className="underline underline-offset-4 transition hover:text-[#111111]"
-          >
-            Privacy Policy
-          </a>
-          <span aria-hidden="true">·</span>
-          <a
-            href={`${import.meta.env.BASE_URL}terms.html`}
-            className="underline underline-offset-4 transition hover:text-[#111111]"
-          >
-            Terms of Use
-          </a>
-          <span aria-hidden="true">·</span>
-          <a href="#/docs" className="underline underline-offset-4 transition hover:text-[#111111]">
-            Docs
-          </a>
+        <footer className="flex flex-col items-center gap-2 border-t border-[#111111] pt-6 font-mono text-xs text-gray-600">
+          <div className="flex items-center justify-center gap-4">
+            <a
+              href={`${import.meta.env.BASE_URL}privacy.html`}
+              className="underline underline-offset-4 transition hover:text-[#111111]"
+            >
+              Privacy Policy
+            </a>
+            <span aria-hidden="true">·</span>
+            <a
+              href={`${import.meta.env.BASE_URL}terms.html`}
+              className="underline underline-offset-4 transition hover:text-[#111111]"
+            >
+              Terms of Use
+            </a>
+            <span aria-hidden="true">·</span>
+            <a href="#/docs" className="underline underline-offset-4 transition hover:text-[#111111]">
+              Docs
+            </a>
+          </div>
+          <p className="text-center text-[10px] text-gray-500">
+            Jolt Extension is an independent companion tool not affiliated with the official Jolt app.
+          </p>
         </footer>
       </section>
     </main>

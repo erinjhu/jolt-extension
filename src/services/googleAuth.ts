@@ -71,6 +71,24 @@ async function fetchProfile(accessToken: string): Promise<GoogleProfile> {
 }
 
 /**
+ * Sentinel error thrown when the user intentionally closes the sign-in popup
+ * or clicks Cancel — not a real failure. Callers can test
+ * `instanceof UserCancelledError` to silently ignore it.
+ */
+export class UserCancelledError extends Error {
+  constructor() {
+    super('Sign-in cancelled by user.');
+    this.name = 'UserCancelledError';
+  }
+}
+
+/**
+ * GIS error types that indicate the user closed the popup or pressed Cancel,
+ * not a genuine sign-in failure.
+ */
+const USER_CANCEL_TYPES = new Set(['popup_closed', 'popup_closed_by_user', 'access_denied']);
+
+/**
  * Acquire an access token via GIS. `prompt: 'consent'` forces the consent UI
  * (first interactive sign-in); `prompt: ''` attempts a silent grant that only
  * succeeds when the user already has an active Google session + prior grant.
@@ -93,15 +111,30 @@ function requestToken(prompt: GisTokenRequestOverrides['prompt']): Promise<GisTo
       client_id: clientId,
       scope: OAUTH_SCOPES,
       callback: (response: GisTokenResponse) => {
-        if (response.error || !response.access_token) {
+        if (response.error) {
+          // The user closed the popup mid-flow — treat as a silent cancel.
+          if (USER_CANCEL_TYPES.has(response.error)) {
+            reject(new UserCancelledError());
+            return;
+          }
           reject(new Error(response.error_description ?? response.error ?? 'Sign-in failed.'));
+          return;
+        }
+        if (!response.access_token) {
+          reject(new Error('Sign-in failed.'));
           return;
         }
         resolve(response);
       },
       error_callback: (error) => {
+        // `popup_closed` / `popup_closed_by_user` / `access_denied` mean the
+        // user dismissed the popup — not a real error, so cancel silently.
         // `interaction_required` means the silent path needs the user; the
         // caller decides whether to fall back to an interactive prompt.
+        if (USER_CANCEL_TYPES.has(error.type)) {
+          reject(new UserCancelledError());
+          return;
+        }
         reject(new Error(error.type ?? error.message ?? 'Sign-in was cancelled.'));
       },
     });

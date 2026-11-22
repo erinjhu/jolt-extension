@@ -141,7 +141,7 @@ export default function ScanTabView(props: ScanTabViewProps) {
         <ScanProgress
           isScanning
           isComplete={false}
-          scanningLabel="Syncing session to Jolt…"
+          scanningLabel="Syncing session to Jolt Extension…"
           showOpenDoc={false}
           overlay
         />

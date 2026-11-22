@@ -11,22 +11,13 @@ import DocsPage from './components/docs/DocsPage';
 import SyncConfirmation from './components/SyncConfirmation';
 import TextEditor from './components/TextEditor';
 import { syncSessionToDrive } from './services/syncSessionToDrive';
-import {
-  transcribeViaGoogleDrive,
-  transcribeViaTesseract,
-  type TranscriptionResult,
-} from './services/transcription';
+import { transcribeViaGoogleDrive, transcribeViaTesseract, type TranscriptionResult } from './services/transcription';
 import { useGoogleAuth } from './hooks/useGoogleAuth';
 import { useHashRoute } from './hooks/useHashRoute';
 import { defaultSessionTitle } from './utils/sessionDefaults';
 import { useTokenRetry } from './hooks/useTokenRetry';
 import type { CreatedDoc } from './services/googleDocsService';
-import {
-  GUEST_USER,
-  guestLoadText,
-  guestSyncSession,
-  guestTranscribe,
-} from './services/guestDemoService';
+import { GUEST_USER, guestLoadText, guestSyncSession, guestTranscribe } from './services/guestDemoService';
 import { useDocumentSync } from './hooks/useDocumentSync';
 import { useGuestMode } from './hooks/useGuestMode';
 import DemoDocPreview from './components/DemoDocPreview';
@@ -72,14 +63,8 @@ export default function App() {
       () => setHasChosenInitialMode(false),
     );
   const {
-    user: googleUser,
-    isRestoring,
-    isBusy: isAuthBusy,
-    error: authError,
-    signIn,
-    signOut,
-    switchAccount,
-    setUser: setGoogleUser,
+    user: googleUser, isRestoring, isBusy: isAuthBusy, error: authError,
+    signIn, signOut, switchAccount, setUser: setGoogleUser,
   } = useGoogleAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncedDoc, setSyncedDoc] = useState<CreatedDoc | null>(null);
@@ -470,24 +455,29 @@ export default function App() {
         )}
 
         {/* Subtle footer: legal pages + in-app docs, on every signed-in screen. */}
-        <footer className="mt-auto flex items-center justify-center gap-4 border-t border-[#111111] pt-6 font-mono text-xs text-gray-500">
-          <a
-            href={`${import.meta.env.BASE_URL}privacy.html`}
-            className="underline underline-offset-4 transition hover:text-[#111111]"
-          >
-            Privacy Policy
-          </a>
-          <span aria-hidden="true">·</span>
-          <a
-            href={`${import.meta.env.BASE_URL}terms.html`}
-            className="underline underline-offset-4 transition hover:text-[#111111]"
-          >
-            Terms of Service
-          </a>
-          <span aria-hidden="true">·</span>
-          <a href="#/docs" className="underline underline-offset-4 transition hover:text-[#111111]">
-            Docs
-          </a>
+        <footer className="mt-auto flex flex-col items-center gap-2 border-t border-[#111111] pt-6 font-mono text-xs text-gray-500">
+          <div className="flex items-center justify-center gap-4">
+            <a
+              href={`${import.meta.env.BASE_URL}privacy.html`}
+              className="underline underline-offset-4 transition hover:text-[#111111]"
+            >
+              Privacy Policy
+            </a>
+            <span aria-hidden="true">·</span>
+            <a
+              href={`${import.meta.env.BASE_URL}terms.html`}
+              className="underline underline-offset-4 transition hover:text-[#111111]"
+            >
+              Terms of Service
+            </a>
+            <span aria-hidden="true">·</span>
+            <a href="#/docs" className="underline underline-offset-4 transition hover:text-[#111111]">
+              Docs
+            </a>
+          </div>
+          <p className="text-center text-[10px] text-gray-500">
+            Jolt Extension is an independent companion tool not affiliated with the official Jolt app.
+          </p>
         </footer>
       </main>
 
