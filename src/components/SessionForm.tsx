@@ -344,7 +344,7 @@ export default function SessionForm({
         disabled={disabled || !isSignedIn}
         className="rounded-none bg-black px-4 py-3 text-sm font-bold uppercase tracking-wide text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {!isSignedIn ? 'Sign in to Google to sync' : isSyncing ? 'Syncing…' : 'Sync to Jolt Extension'}
+        {!isSignedIn ? 'Sign in to Google to sync' : isSyncing ? 'Submitting…' : 'Submit'}
       </button>
     </form>
   );

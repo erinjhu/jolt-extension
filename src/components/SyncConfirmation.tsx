@@ -19,7 +19,7 @@ const SCREENSHOT_SRC = '/images/instructions/jolt-import-step.png';
  * Post-sync confirmation card. Replaces the capture / editor view once a
  * session has synced to Drive: a monochrome success notice, the created
  * document name with a link to open it, the "Next: Import into Jolt" steps,
- * and a prominent "Start New Session" button to start over.
+ * and a prominent OK button to return cleanly to a fresh session.
  * Matches Jolt's sharp-cornered #FFFFFF / #111111 look.
  */
 export default function SyncConfirmation({
@@ -175,7 +175,7 @@ export default function SyncConfirmation({
         onClick={onStartNewSession}
         className="w-full rounded-none bg-black px-6 py-3 text-sm font-bold uppercase tracking-wide text-white transition hover:bg-gray-800"
       >
-        Start New Session
+        OK
       </button>
     </section>
   );
