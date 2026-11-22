@@ -92,6 +92,9 @@ export default function ScanTabView(props: ScanTabViewProps) {
 
   // Step 2: ← BACK on top, OCR progress bar, then the pre-filled form.
   const scanComplete = !isTranscribing && transcription?.source === 'google-drive';
+  // Single source of truth for the synced doc: the banner link and the
+  // "Open your doc" button must always resolve to the same document.
+  const syncedDocId: string | undefined = transcription?.docId ?? selectedDoc?.id;
   return (
     <>
       <button
@@ -110,7 +113,7 @@ export default function ScanTabView(props: ScanTabViewProps) {
           <ScanProgress
             isScanning={isTranscribing}
             isComplete={scanComplete}
-            documentId={selectedDoc?.id ?? transcription?.docId ?? null}
+            documentId={syncedDocId ?? null}
             onPreviewDoc={isGuest ? onPreviewDoc : undefined}
           />
         </div>
@@ -121,7 +124,7 @@ export default function ScanTabView(props: ScanTabViewProps) {
         initialDescription={transcription?.text ?? ''}
         imageBase64={imageBase64}
         documentName={selectedDoc?.name ?? ''}
-        documentId={transcription?.docId ?? selectedDoc?.id}
+        documentId={syncedDocId}
         isGuest={isGuest}
         onPreviewDoc={onPreviewDoc}
         onImageSelected={onRetake}
