@@ -38,6 +38,28 @@ export function removeCachedToken(token: string): Promise<void> {
   });
 }
 
+/** Thrown when the user dismisses the Google sign-in / consent window. */
+export class AuthCancelledError extends Error {
+  constructor() {
+    super('Sign-in cancelled by user.');
+    this.name = 'AuthCancelledError';
+  }
+}
+
+/** True when a chrome.identity error means the user backed out on purpose. */
+export function isAuthCancellation(err: unknown): boolean {
+  if (err instanceof AuthCancelledError) return true;
+  const text = (err instanceof Error ? err.message : String(err ?? '')).toLowerCase();
+  return (
+    text.includes('did not approve') ||
+    text.includes('not granted or revoked') ||
+    text.includes('popup closed') ||
+    text.includes('window was closed') ||
+    text.includes('canceled') ||
+    text.includes('cancelled')
+  );
+}
+
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
 /**
@@ -116,11 +138,6 @@ async function rememberAuth(email: string | null): Promise<void> {
   });
 }
 
-/** Clear the persisted auth hint on disconnect. */
-async function forgetAuth(): Promise<void> {
-  await chrome.storage.local.remove([AUTH_FLAG_KEY, AUTH_EMAIL_KEY]);
-}
-
 /** Read the persisted auth hint (flag + last-known email). */
 async function readAuthHint(): Promise<{ connected: boolean; email: string | null }> {
   const stored = await chrome.storage.local.get([AUTH_FLAG_KEY, AUTH_EMAIL_KEY]);
@@ -135,7 +152,13 @@ async function readAuthHint(): Promise<{ connected: boolean; email: string | nul
  * with the token plus a best-effort email, and persist the connected flag.
  */
 export async function signIn(): Promise<AuthSession> {
-  const token = await getAuthToken(true);
+  let token: string;
+  try {
+    token = await getAuthToken(true);
+  } catch (err) {
+    if (isAuthCancellation(err)) throw new AuthCancelledError();
+    throw err;
+  }
   await storeToken(token);
   const email = await fetchUserEmail(token);
   await rememberAuth(email);
@@ -204,15 +227,65 @@ export async function getSignedInSession(): Promise<AuthSession | null> {
   }
 }
 
-/** Disconnect: drop the cached token and clear the persisted auth hint. */
-export async function disconnect(): Promise<void> {
+const REVOKE_URL = 'https://accounts.google.com/o/oauth2/revoke';
+
+/** Best-effort server-side revocation; a network failure never blocks sign-out. */
+async function revokeToken(token: string): Promise<void> {
   try {
-    const token = await getAuthToken(false);
-    await removeCachedToken(token);
+    await fetch(`${REVOKE_URL}?token=${encodeURIComponent(token)}`);
   } catch {
-    // No cached token to remove — already disconnected.
-  } finally {
-    await clearStoredToken();
-    await forgetAuth();
+    // Offline or blocked — local sign-out still proceeds.
   }
+}
+
+/** Clear every token Chrome's identity cache holds, when the API exists. */
+async function clearChromeTokenCache(): Promise<void> {
+  const identity = chrome.identity as typeof chrome.identity & {
+    clearAllCachedAuthTokens?: () => Promise<void>;
+  };
+  try {
+    await identity.clearAllCachedAuthTokens?.();
+  } catch {
+    // Unsupported on this Chrome build — the per-token removal covers it.
+  }
+}
+
+/**
+ * Full sign-out: revoke the active token with Google, evict it from Chrome's
+ * identity cache (so Chrome cannot silently re-authenticate the old account),
+ * and wipe all persisted profile data, session caches and folder ids.
+ */
+export async function signOut(): Promise<void> {
+  let token: string | null = null;
+  const stored = await readStoredToken();
+  if (stored) {
+    token = stored.token;
+  } else {
+    try {
+      token = await getAuthToken(false);
+    } catch {
+      token = null;
+    }
+  }
+
+  try {
+    if (token) {
+      await revokeToken(token);
+      await removeCachedToken(token);
+    }
+    await clearChromeTokenCache();
+  } finally {
+    await chrome.storage.local.clear();
+    await chrome.storage.sync.clear();
+  }
+}
+
+/**
+ * Switch accounts: sign out completely first so no cached grant can
+ * auto-select the previous account, then run a fresh interactive sign-in so
+ * Google presents its account chooser.
+ */
+export async function switchAccount(): Promise<AuthSession> {
+  await signOut();
+  return signIn();
 }

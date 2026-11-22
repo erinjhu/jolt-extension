@@ -6,25 +6,24 @@
     <title>Jolt Autofill</title>
     <style>
       :root {
-        color-scheme: light dark;
-        --accent: #4f46e5;
-        --accent-hover: #4338ca;
-        --fg: #1f2937;
-        --muted: #6b7280;
-        --border: #e5e7eb;
+        color-scheme: light;
+        --ink: #111111;
+        --muted: #555555;
+        --border: #111111;
         --bg: #ffffff;
-        --ok: #047857;
-        --err: #b91c1c;
+        --bg-alt: #fafafa;
       }
       * {
         box-sizing: border-box;
+        border-radius: 0;
+        box-shadow: none;
       }
       body {
         width: 320px;
         margin: 0;
         padding: 16px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        color: var(--fg);
+        color: var(--ink);
         background: var(--bg);
         font-size: 14px;
       }
@@ -37,7 +36,6 @@
       }
       .empty {
         color: var(--muted);
-        font-style: italic;
         padding: 12px 0;
       }
       .session-list {
@@ -47,7 +45,6 @@
         max-height: 320px;
         overflow-y: auto;
         border: 1px solid var(--border);
-        border-radius: 10px;
       }
       .session-row {
         display: flex;
@@ -92,100 +89,85 @@
         font-size: 12px;
         font-weight: 600;
         padding: 5px 10px;
-        border-radius: 999px;
-        background: rgba(4, 120, 87, 0.12);
-        color: var(--ok);
-        border: none;
+        background: var(--bg-alt);
+        color: var(--ink);
+        border: 1px solid var(--border);
         cursor: pointer;
       }
-      .synced-badge .dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--ok);
+      .synced-badge .check {
+        font-size: 12px;
+        line-height: 1;
+      }
+      #sync-btn:hover:not(:disabled) {
+        background: var(--ink);
+        color: var(--bg);
       }
       button {
         width: 100%;
         padding: 10px 12px;
-        border: none;
-        border-radius: 8px;
+        border: 1px solid var(--border);
         font-size: 14px;
         font-weight: 600;
         cursor: pointer;
         margin-bottom: 8px;
-        transition: background-color 0.15s ease;
+        background: var(--bg);
+        color: var(--ink);
       }
       button:disabled {
-        opacity: 0.6;
+        opacity: 0.5;
         cursor: not-allowed;
       }
       .primary {
-        background: var(--accent);
-        color: #fff;
+        background: var(--ink);
+        color: var(--bg);
       }
       .primary:hover:not(:disabled) {
-        background: var(--accent-hover);
+        background: #333333;
       }
       .secondary {
-        background: #f3f4f6;
-        color: var(--fg);
+        background: var(--bg);
+        color: var(--ink);
       }
       .secondary:hover:not(:disabled) {
-        background: #e5e7eb;
+        background: var(--bg-alt);
       }
       #status {
         font-size: 12px;
         min-height: 16px;
         margin: 4px 0 0;
       }
-      #status.ok {
-        color: var(--ok);
-      }
-      #status.err {
-        color: var(--err);
-      }
+      #status.ok,
       #status.info {
         color: var(--muted);
       }
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
+      #status.err {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .account-row {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px 10px;
+        margin-bottom: 10px;
+        background: var(--bg-alt);
+        border: 1px solid var(--border);
+      }
+      .account-email {
         font-size: 12px;
         font-weight: 600;
-        padding: 4px 10px;
-        border-radius: 999px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
-      .badge .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-      }
-      .badge.connected {
-        background: rgba(4, 120, 87, 0.12);
-        color: var(--ok);
-      }
-      .badge.connected .dot {
-        background: var(--ok);
-      }
-      .badge.disconnected {
-        background: #f3f4f6;
-        color: var(--muted);
-      }
-      .badge.disconnected .dot {
-        background: #9ca3af;
-      }
-      .auth-row {
+      .account-actions {
         display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        margin-bottom: 10px;
+        gap: 6px;
       }
-      .auth-row button {
-        width: auto;
+      .account-actions button {
+        flex: 1;
         margin: 0;
-        padding: 6px 10px;
+        padding: 5px 8px;
         font-size: 12px;
       }
       .hint {
@@ -198,7 +180,7 @@
   <body>
     <h1>
       <svg width="18" height="18" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Jolt">
-        <g transform="skewX(-12)" fill="#4f46e5">
+        <g transform="skewX(-12)" fill="#111111">
           <path d="M 73 8 H 80.5 Q 83 8 83 10.5 V 15 H 73 Z" />
           <path d="M 58 20 H 76 V 27 H 58 Z" />
           <path d="M 40 32 H 67 V 39 H 40 Z" />
@@ -212,15 +194,16 @@
       Jolt Autofill
     </h1>
 
-    <div class="auth-row">
-      <span class="badge disconnected" id="auth-badge">
-        <span class="dot"></span>
-        <span id="auth-badge-text">Not Connected</span>
-      </span>
-      <button class="secondary" id="disconnect-btn" hidden>Disconnect</button>
+    <!-- Signed-in account + actions: shown only while connected. -->
+    <div class="account-row" id="account-row" hidden>
+      <span class="account-email" id="account-email"></span>
+      <div class="account-actions">
+        <button class="secondary" id="switch-btn">Switch Account</button>
+        <button class="secondary" id="signout-btn">Sign Out</button>
+      </div>
     </div>
 
-    <!-- Settings / Sign In view: shown while the user is unauthenticated. -->
+    <!-- Sign In view: shown while the user is unauthenticated. -->
     <section id="signin-view" hidden>
       <p class="hint">
         Connect your Google account to sync sessions from Drive.
@@ -233,7 +216,7 @@
       <button class="secondary" id="sync-btn">Refresh Sessions</button>
 
       <p class="empty" id="session-empty" hidden>
-        No sessions yet. Click Refresh Sessions” to load them.
+        No sessions yet. Click “Refresh Sessions” to load them.
       </p>
       <ul class="session-list" id="session-list" hidden></ul>
     </section>

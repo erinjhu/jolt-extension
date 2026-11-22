@@ -5,7 +5,14 @@
  * content script on the active Jolt tab. No OAuth logic lives here.
  */
 
-import { disconnect, getSignedInSession, signIn, type AuthSession } from './auth';
+import {
+  getSignedInSession,
+  isAuthCancellation,
+  signIn,
+  signOut,
+  switchAccount,
+  type AuthSession,
+} from './auth';
 import type { AutofillReport } from './content';
 import {
   CachedSessions,
@@ -31,12 +38,13 @@ function isJoltTab(tab: chrome.tabs.Tab | undefined): boolean {
 }
 
 const els = {
-  badge: document.getElementById('auth-badge') as HTMLSpanElement,
-  badgeText: document.getElementById('auth-badge-text') as HTMLSpanElement,
+  account: document.getElementById('account-email') as HTMLSpanElement,
+  accountRow: document.getElementById('account-row') as HTMLElement,
   signinView: document.getElementById('signin-view') as HTMLElement,
   signinBtn: document.getElementById('signin-btn') as HTMLButtonElement,
   mainView: document.getElementById('main-view') as HTMLElement,
-  disconnectBtn: document.getElementById('disconnect-btn') as HTMLButtonElement,
+  signOutBtn: document.getElementById('signout-btn') as HTMLButtonElement,
+  switchBtn: document.getElementById('switch-btn') as HTMLButtonElement,
   empty: document.getElementById('session-empty') as HTMLParagraphElement,
   list: document.getElementById('session-list') as HTMLUListElement,
   syncBtn: document.getElementById('sync-btn') as HTMLButtonElement,
@@ -80,7 +88,7 @@ function buildAction(session: SessionSummary): HTMLElement {
     const badge = document.createElement('button');
     badge.className = 'synced-badge';
     badge.title = 'Synced — click to autofill again';
-    badge.innerHTML = '<span class="dot"></span>Synced';
+    badge.innerHTML = '<span class="check" aria-hidden="true">✓</span>Synced';
     badge.addEventListener('click', () => void onSyncSession(session));
     wrapper.appendChild(badge);
   } else {
@@ -256,16 +264,18 @@ async function onSyncSession(session: SessionSummary): Promise<void> {
 /** Toggle between the sign-in view and the main view by auth state. */
 function renderAuth(session: AuthSession | null): void {
   const connected = Boolean(session);
-  const email = session?.email;
-  els.badge.className = `badge ${connected ? 'connected' : 'disconnected'}`;
-  els.badgeText.textContent = connected
-    ? email
-      ? `Connected as ${email}`
-      : 'Connected'
-    : 'Not Connected';
-  els.disconnectBtn.hidden = !connected;
+  els.account.textContent = session?.email ?? 'Google account connected';
+  els.accountRow.hidden = !connected;
   els.signinView.hidden = connected;
   els.mainView.hidden = !connected;
+}
+
+/** Return the popup to its signed-out state and drop any loaded sessions. */
+function resetToSignedOut(): void {
+  sessions = [];
+  syncedIds = new Set();
+  renderList();
+  renderAuth(null);
 }
 
 /** Handle "Sign In with Google". */
@@ -277,24 +287,46 @@ async function onSignIn(): Promise<void> {
     setStatus('', 'info');
     await loadSessions();
   } catch (err) {
-    setStatus(err instanceof Error ? err.message : 'Sign-in failed.', 'err');
+    // Closing the Google window is not an error — reset quietly.
+    if (isAuthCancellation(err)) setStatus('', 'info');
+    else setStatus(err instanceof Error ? err.message : 'Sign-in failed.', 'err');
   } finally {
     els.signinBtn.disabled = false;
   }
 }
 
-/** Handle "Disconnect". */
-async function onDisconnect(): Promise<void> {
-  els.disconnectBtn.disabled = true;
+/** Handle "Sign Out": revoke, clear caches, reset the UI immediately. */
+async function onSignOut(): Promise<void> {
+  setAuthButtonsDisabled(true);
+  resetToSignedOut();
+  setStatus('', 'info');
   try {
-    await disconnect();
-    sessions = [];
-    renderList();
-    renderAuth(null);
-    setStatus('Disconnected.', 'info');
+    await signOut();
   } finally {
-    els.disconnectBtn.disabled = false;
+    setAuthButtonsDisabled(false);
   }
+}
+
+/** Handle "Switch Account": full sign-out, then a fresh account chooser. */
+async function onSwitchAccount(): Promise<void> {
+  setAuthButtonsDisabled(true);
+  resetToSignedOut();
+  setStatus('Opening Google account chooser…', 'info');
+  try {
+    renderAuth(await switchAccount());
+    setStatus('', 'info');
+    await loadSessions();
+  } catch (err) {
+    if (isAuthCancellation(err)) setStatus('', 'info');
+    else setStatus(err instanceof Error ? err.message : 'Could not switch account.', 'err');
+  } finally {
+    setAuthButtonsDisabled(false);
+  }
+}
+
+function setAuthButtonsDisabled(disabled: boolean): void {
+  els.signOutBtn.disabled = disabled;
+  els.switchBtn.disabled = disabled;
 }
 
 /** Resolve the current auth state on open and render the matching view. */
@@ -307,7 +339,8 @@ async function initAuth(): Promise<void> {
 }
 
 els.signinBtn.addEventListener('click', () => void onSignIn());
-els.disconnectBtn.addEventListener('click', () => void onDisconnect());
+els.signOutBtn.addEventListener('click', () => void onSignOut());
+els.switchBtn.addEventListener('click', () => void onSwitchAccount());
 els.syncBtn.addEventListener('click', () => void onSyncFromDrive());
 
 void initAuth();
