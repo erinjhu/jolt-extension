@@ -65,7 +65,7 @@ export default function ExistingDocContext({ text }: ExistingDocContextProps) {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-4">
-              <h2 className="text-sm font-bold">Why can I only add to the end?</h2>
+              <h2 className="text-sm font-bold">Why can I only add to the bottom of my Google Doc?</h2>
               <button
                 type="button"
                 aria-label="Close explanation"
@@ -77,13 +77,16 @@ export default function ExistingDocContext({ text }: ExistingDocContextProps) {
             </div>
             <div className="mt-3 space-y-3 text-sm leading-relaxed text-gray-700">
               <p>
-                The Google Docs mobile app blocks custom timers and writing extensions from running inside it.
+                Google Docs blocks custom timers and extensions from running inside it.
               </p>
               <p>
-                This companion web app is a lightweight workaround so you can still track sessions and sync to your Doc.
+                This web app is a workaround that lets you track sessions while still being able to sync to Google Drive.
               </p>
               <p>
-                Right now, you can only append new text at the bottom. Full rich-text editing (like bold, italics, and underline) isn't included in this lightweight demo so your existing document's formatting stays untouched.
+                This lightweight demo currently doesn't have full rich-text editing like bold and underline.
+              </p>
+              <p>
+                To make sure that it doesn't mess up existing formatting in your document, it only adds new text to the bottom.
               </p>
             </div>
             <button
