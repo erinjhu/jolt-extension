@@ -392,7 +392,7 @@ export default function App() {
         {isSynced ? (
           <SyncConfirmation
             doc={syncedDoc}
-            onStartNewSession={resetFlow}
+            onOk={handleBackToModes}
             isGuest={isGuestMode}
             onPreviewDoc={() => setShowDocPreview(true)}
           />

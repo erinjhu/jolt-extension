@@ -10,6 +10,7 @@ import {
   guestDefaultFolder,
   guestListDocs,
 } from '../services/guestDemoService';
+import { isUserCancellation } from '../services/googleAuth';
 import { isPickerConfigured, pickGoogleDoc, pickGoogleFolder } from '../services/googlePicker';
 import { joltSingleLineClass } from './jolt/JoltField';
 
@@ -93,7 +94,8 @@ export default function DocumentSelector({
     try {
       const folder = await pickGoogleFolder(accessToken);
       if (folder) setDestFolder(folder);
-    } catch {
+    } catch (err) {
+      if (isUserCancellation(err)) return;
       setError('Could not open the folder picker.');
     }
   }
@@ -132,7 +134,8 @@ export default function DocumentSelector({
         setDocs((prev) => [picked, ...prev.filter((d) => d.id !== picked.id)]);
         onSelect(picked);
       }
-    } catch {
+    } catch (err) {
+      if (isUserCancellation(err)) return;
       setError('Could not open the Google Picker.');
     }
   }

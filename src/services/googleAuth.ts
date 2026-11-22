@@ -88,6 +88,22 @@ export class UserCancelledError extends Error {
  */
 const USER_CANCEL_TYPES = new Set(['popup_closed', 'popup_closed_by_user', 'access_denied']);
 
+/** True for any error that represents the user intentionally backing out. */
+export function isUserCancellation(err: unknown): boolean {
+  if (err instanceof UserCancelledError) return true;
+  const text = (
+    typeof err === 'string' ? err : err instanceof Error ? err.message : ''
+  ).toLowerCase();
+  return (
+    USER_CANCEL_TYPES.has(text) ||
+    text.includes('cancelled by user') ||
+    text.includes('canceled by user') ||
+    text.includes('popup closed') ||
+    text.includes('popup_closed') ||
+    text.includes('picker-canceled')
+  );
+}
+
 /**
  * Acquire an access token via GIS. `prompt: 'consent'` forces the consent UI
  * (first interactive sign-in); `prompt: ''` attempts a silent grant that only
@@ -131,7 +147,7 @@ function requestToken(prompt: GisTokenRequestOverrides['prompt']): Promise<GisTo
         // user dismissed the popup — not a real error, so cancel silently.
         // `interaction_required` means the silent path needs the user; the
         // caller decides whether to fall back to an interactive prompt.
-        if (USER_CANCEL_TYPES.has(error.type)) {
+        if (USER_CANCEL_TYPES.has(error.type) || isUserCancellation(error.message)) {
           reject(new UserCancelledError());
           return;
         }

@@ -4,11 +4,11 @@ import type { CreatedDoc } from '../services/googleDocsService';
 interface SyncConfirmationProps {
   /** The Google Doc created by the successful sync, if available. */
   doc: CreatedDoc | null;
-  /** Resets the flow to a fresh, empty capture form. */
-  onStartNewSession: () => void;
+  /** Clears session state and returns to the Mode Selection landing. */
+  onOk: () => void;
   /** Guest demo: open the in-app preview instead of a docs.google.com link. */
   isGuest?: boolean;
-  /** Guest demo: invoked by the \"open doc\" action to show the preview. */
+  /** Guest demo: invoked by the "open doc" action to show the preview. */
   onPreviewDoc?: () => void;
 }
 
@@ -24,7 +24,7 @@ const SCREENSHOT_SRC = '/images/instructions/jolt-import-step.png';
  */
 export default function SyncConfirmation({
   doc,
-  onStartNewSession,
+  onOk,
   isGuest = false,
   onPreviewDoc,
 }: SyncConfirmationProps) {
@@ -172,7 +172,7 @@ export default function SyncConfirmation({
 
       <button
         type="button"
-        onClick={onStartNewSession}
+        onClick={onOk}
         className="w-full rounded-none bg-black px-6 py-3 text-sm font-bold uppercase tracking-wide text-white transition hover:bg-gray-800"
       >
         OK
