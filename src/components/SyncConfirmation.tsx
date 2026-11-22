@@ -80,7 +80,7 @@ export default function SyncConfirmation({
           <li className="flex gap-2">
             <span className="shrink-0 font-bold text-black">1.</span>
             <span>
-              Open a new tab in Chrome and click the{' '}
+              Open Jolt in Chrome and click the{' '}
               <span className="font-bold text-black">Jolt</span> extension icon in the toolbar
               (or pin it from the Extensions menu).
             </span>

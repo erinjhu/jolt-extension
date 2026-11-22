@@ -320,7 +320,7 @@ export default function SessionForm({
                 onClick={openDocInNewTab}
                 className="shrink-0 rounded-none border border-[#111111] bg-[#FFFFFF] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
               >
-                Open your doc to find quote ↗
+                Open your doc to find a quote ↗
               </button>
             )}
           </div>
