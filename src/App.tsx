@@ -448,7 +448,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setHasChosenInitialMode(false)}
-              className="self-start font-mono text-xs text-[#111111] underline underline-offset-4 hover:text-black"
+              className="self-start rounded-none border border-[#111111] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#111111] transition hover:bg-gray-100"
             >
               ← Back
             </button>
@@ -477,9 +477,7 @@ export default function App() {
               Docs
             </a>
           </div>
-          <p className="text-center text-[10px] text-gray-500">
-            Jolt Extension is an independent companion tool not affiliated with the official Jolt app.
-          </p>
+          
         </footer>
       </main>
 
