@@ -9,7 +9,8 @@
 
 import { preprocessImageForOcr } from '../utils/imagePreprocessor';
 import { ensureSyncFolder } from './driveFolderService';
-import { transcribeImageWithGoogleDrive } from './googleDocsService';
+import { docEditUrl } from '../utils/docUrl';
+import { transcribeImageWithGoogleDrive, trashDriveFile } from './googleDocsService';
 import { recognizeHandwriting } from './ocrService';
 
 export type TranscriptionSource = 'google-drive' | 'tesseract';
@@ -49,6 +50,30 @@ export async function transcribeViaGoogleDrive(
     webViewLink: result.webViewLink,
     docId: result.docId,
   };
+}
+
+/**
+ * Scan into a specific target doc. Drive OCR needs a scratch Google Doc, so
+ * the text is read from that scratch doc, APPENDED to `targetDocId` (existing
+ * content is preserved), and the scratch doc is trashed. The returned
+ * `docId` / `webViewLink` always describe `targetDocId`, so every UI link
+ * resolves to the doc the text was actually written to.
+ *
+ * With no `targetDocId` the scratch doc itself becomes the target.
+ */
+export async function transcribeIntoTargetDoc(
+  accessToken: string,
+  imageBlob: Blob,
+  docTitle: string,
+  targetDocId: string | null,
+  appendToTarget: (docId: string, text: string) => Promise<void>,
+): Promise<TranscriptionResult> {
+  const ocr = await transcribeViaGoogleDrive(accessToken, imageBlob, docTitle);
+  if (!targetDocId || !ocr.docId || ocr.docId === targetDocId) return ocr;
+
+  await appendToTarget(targetDocId, ocr.text);
+  await trashDriveFile(accessToken, ocr.docId);
+  return { ...ocr, docId: targetDocId, webViewLink: docEditUrl(targetDocId) };
 }
 
 /** Transcribe locally with Tesseract.js (offline fallback). */

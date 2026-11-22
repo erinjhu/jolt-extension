@@ -19,6 +19,7 @@ import {
   joltInputClass,
   joltSingleLineClass,
 } from './jolt/JoltField';
+import { docEditUrl } from '../utils/docUrl';
 import JoltSessionStats from './jolt/JoltSessionStats';
 import JoltVisibilityToggle from './jolt/JoltVisibilityToggle';
 
@@ -149,11 +150,7 @@ export default function SessionForm({
       return;
     }
     if (!documentId) return;
-    window.open(
-      `https://docs.google.com/document/d/${documentId}/edit`,
-      '_blank',
-      'noopener,noreferrer',
-    );
+    window.open(docEditUrl(documentId), '_blank', 'noopener,noreferrer');
   }
 
 

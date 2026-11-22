@@ -11,7 +11,7 @@ import DocsPage from './components/docs/DocsPage';
 import SyncConfirmation from './components/SyncConfirmation';
 import TextEditor from './components/TextEditor';
 import { syncSessionToDrive } from './services/syncSessionToDrive';
-import { transcribeViaGoogleDrive, transcribeViaTesseract, type TranscriptionResult } from './services/transcription';
+import { transcribeIntoTargetDoc, transcribeViaTesseract, type TranscriptionResult } from './services/transcription';
 import { useGoogleAuth } from './hooks/useGoogleAuth';
 import { useHashRoute } from './hooks/useHashRoute';
 import { defaultSessionTitle } from './utils/sessionDefaults';
@@ -154,7 +154,9 @@ export default function App() {
     try {
       const blob = await dataUrlToBlob(dataUrl);
       const result = await withTokenRetry((token) =>
-        transcribeViaGoogleDrive(token, blob, defaultSessionTitle()),
+        transcribeIntoTargetDoc(token, blob, defaultSessionTitle(), doc.id, (id, text) =>
+          appendDocumentTextFn(id, '', text),
+        ),
       );
       setTranscription(result);
     } catch (err) {
@@ -304,7 +306,7 @@ export default function App() {
         setSyncedDoc(guestSyncSession(payload));
         return;
       }
-      const doc = await withTokenRetry((token) => syncSessionToDrive(token, payload));
+      const doc = await withTokenRetry((token) => syncSessionToDrive(token, payload, selectedDoc));
       setSyncedDoc(doc);
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : 'Sync to Drive failed.');

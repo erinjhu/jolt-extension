@@ -333,6 +333,25 @@ export async function replaceAppendedRange(
 }
 
 /**
+ * Move a Drive file to the trash. Used to discard the scratch OCR doc once its
+ * text has been appended to the real target doc. Best-effort: never throws.
+ */
+export async function trashDriveFile(accessToken: string, fileId: string): Promise<void> {
+  try {
+    await fetch(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ trashed: true }),
+    });
+  } catch {
+    // Leaving a stray scratch doc in JoltSync is harmless.
+  }
+}
+
+/**
  * Upload a preprocessed image to Drive as a native Google Doc so Google's
  * server-side Vision/OCR engine transcribes the handwriting, then export the
  * resulting text. This is the primary (high-quality) transcription path.

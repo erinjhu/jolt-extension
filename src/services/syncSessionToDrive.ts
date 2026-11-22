@@ -4,6 +4,7 @@
  */
 
 import type { JoltSessionPayload } from '../types/session';
+import { docEditUrl } from '../utils/docUrl';
 import { ensureSyncFolder } from './driveFolderService';
 import { createDocInFolder, type CreatedDoc } from './googleDocsService';
 import { writeSessionFile } from './sessionFileService';
@@ -41,23 +42,30 @@ function composeDocBody(payload: JoltSessionPayload): string {
 }
 
 /**
- * Run the full sync and return the created document's metadata. The caller
+ * Run the full sync and return the document the session belongs to. The caller
  * must pass a valid Google access token (user signed in).
+ *
+ * When `targetDoc` is given, the session text already lives in that doc (scan
+ * text was appended, editor text was saved), so NO second doc is created: only
+ * the machine-readable session JSON is written, and the returned doc is the
+ * target itself. This keeps every post-sync link on the same document.
+ * Without a target, a new doc is created from the session text.
  */
 export async function syncSessionToDrive(
   accessToken: string,
   payload: JoltSessionPayload,
+  targetDoc: { id: string; name: string } | null = null,
 ): Promise<CreatedDoc> {
   const folderId = await ensureSyncFolder(accessToken);
 
-  // Human-readable Google Doc (for verifying the synced note), plus the
-  // machine-readable JSON the Chrome extension reads to autofill Jolt.
-  const doc = await createDocInFolder(
-    accessToken,
-    folderId,
-    resolveDocName(payload),
-    composeDocBody(payload),
-  );
+  const doc: CreatedDoc = targetDoc
+    ? { id: targetDoc.id, name: targetDoc.name, webViewLink: docEditUrl(targetDoc.id) }
+    : await createDocInFolder(
+        accessToken,
+        folderId,
+        resolveDocName(payload),
+        composeDocBody(payload),
+      );
   await writeSessionFile(accessToken, folderId, payload);
 
   return doc;

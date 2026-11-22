@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { docEditUrl } from '../utils/docUrl';
 
 /**
  * Minimalist monochrome scan-progress indicator shown above the ADD MANUAL
@@ -74,9 +75,7 @@ export default function ScanProgress({
     };
   }, [isScanning, isComplete]);
 
-  const docHref = documentId
-    ? `https://docs.google.com/document/d/${documentId}/edit`
-    : null;
+  const docHref = documentId ? docEditUrl(documentId) : null;
 
   // The progress card itself — reused inline or inside the centered overlay.
   const card = (
