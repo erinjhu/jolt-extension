@@ -13,7 +13,7 @@ interface SyncConfirmationProps {
 }
 
 /** True when the screenshot asset is present in the public folder. */
-const SCREENSHOT_SRC = '/images/instructions/jolt-import-step.png';
+const SCREENSHOT_SRC = `${import.meta.env.BASE_URL}images/instructions/jolt-import-step.png`;
 
 /**
  * Post-sync confirmation card. Replaces the capture / editor view once a
@@ -73,56 +73,26 @@ export default function SyncConfirmation({
       {/* ── Next: Import into Jolt Chrome Extension ── */}
       <div className="flex flex-col gap-4 rounded-none border border-[#111111] bg-[#FAFAFA] p-4">
         <h3 className="text-xs font-bold uppercase tracking-wide text-black">
-          Next: Import into Jolt Chrome Extension
+          To Import Session to Jolt
         </h3>
 
         <ol className="flex flex-col gap-2 font-mono text-xs text-gray-700">
           <li className="flex gap-2">
             <span className="shrink-0 font-bold text-black">1.</span>
             <span>
-              Open Jolt in Chrome and click the{' '}
-              <span className="font-bold text-black">Jolt</span> extension icon in the toolbar
-              (or pin it from the Extensions menu).
+              Open a Chrome tab with Jolt on your computer.
             </span>
           </li>
           <li className="flex gap-2">
             <span className="shrink-0 font-bold text-black">2.</span>
             <span>
-              Click <span className="font-bold text-black">Import</span> inside the Jolt
-              extension, then open your synced Google Doc — it lives in the{' '}
-              <span className="font-bold text-black">joltsync</span> folder in Google Drive.
-              {doc && !isGuest && (
-                <>
-                  {' '}
-                  <a
-                    href={doc.webViewLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-bold text-black underline underline-offset-2 hover:text-gray-600"
-                  >
-                    Open your doc ↗
-                  </a>
-                </>
-              )}
-              {isGuest && (
-                <>
-                  {' '}
-                  <button
-                    type="button"
-                    onClick={onPreviewDoc}
-                    className="font-bold text-black underline underline-offset-2 hover:text-gray-600"
-                  >
-                    Preview demo doc ↗
-                  </button>
-                </>
-              )}
+              While on the Jolt tab, open Jolt Autofill, press Refresh Sessions, then Sync.
             </span>
           </li>
           <li className="flex gap-2">
             <span className="shrink-0 font-bold text-black">3.</span>
             <span>
-              Select the synced document to bring your notes or draft directly into Jolt as a
-              new session entry.
+              Jolt Autofill will populate your session details on Jolt.   
             </span>
           </li>
         </ol>
