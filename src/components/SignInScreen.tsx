@@ -37,7 +37,7 @@ export default function SignInScreen({ isBusy, error, onSignIn, onGuestMode }: S
             <h1 className="text-3xl font-bold tracking-tight">Jolt Extension</h1>
           </button>
           <p className="font-mono text-xs leading-relaxed text-gray-600">
-            Jolt Extension is a companion web app for the Jolt Chrome extension to track your writing from your phone.
+            Track and share your writing from your phone.
           </p>
         </div>
 
@@ -97,9 +97,7 @@ export default function SignInScreen({ isBusy, error, onSignIn, onGuestMode }: S
               Docs
             </a>
           </div>
-          <p className="text-center text-[10px] text-gray-500">
-            Jolt Extension is an independent companion tool not affiliated with the official Jolt app.
-          </p>
+          
         </footer>
       </section>
     </main>
