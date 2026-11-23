@@ -205,11 +205,8 @@ export function hasStoredSession(): boolean {
 /**
  * Restore the signed-in user on app mount / reload:
  *   1. If a stored token is still valid (with a 60s buffer), use it as-is.
- *   2. If it's expired, attempt a silent refresh.
+ *   2. If it's expired, clear it and return null (no popup on page load).
  *   3. Otherwise return null so the UI shows the sign-in button.
- *
- * localStorage is only cleared on explicit sign-out or when a silent refresh
- * fails — never merely because a token expired.
  */
 export async function restoreSession(): Promise<GoogleUser | null> {
   const stored = readSession();
@@ -218,12 +215,13 @@ export async function restoreSession(): Promise<GoogleUser | null> {
   }
   if (!stored) return null;
 
-  // Stored but expired: try a silent refresh before giving up.
-  try {
-    return await silentRefresh();
-  } catch {
-    return null;
-  }
+  // Stored but expired: do NOT attempt a refresh on load. GIS's token flow is
+  // popup-based, so a "silent" request can still open a Google window the
+  // moment the page opens. Drop the stale session and show the signed-out
+  // state; the user signs in by clicking. (Mid-session 401s still refresh
+  // silently via `silentRefresh` in the token-retry hook.)
+  clearSession();
+  return null;
 }
 
 /** Revoke the token, clear the persisted session, and forget the user. */

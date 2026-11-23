@@ -32,9 +32,8 @@ export interface GoogleAuthState {
 
 /**
  * Owns Google auth state for the whole app so the UI can gate on it. On mount
- * it restores a persisted session (valid token, or silent refresh of an
- * expired one) before declaring the user signed out, which keeps the sign-in
- * screen from flashing on reload.
+ * it restores a persisted session if its token is still valid; an expired one
+ * is dropped (no popup on page load) and the sign-in screen is shown.
  */
 export function useGoogleAuth(): GoogleAuthState {
   const [user, setUser] = useState<GoogleUser | null>(null);
