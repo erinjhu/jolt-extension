@@ -18,6 +18,10 @@
         border-radius: 0;
         box-shadow: none;
       }
+      /* Author display rules (e.g. .account-row flex) must never un-hide these. */
+      [hidden] {
+        display: none !important;
+      }
       body {
         width: 320px;
         margin: 0;
@@ -144,6 +148,15 @@
         color: var(--ink);
         font-weight: 600;
       }
+      .error-banner {
+        margin: 0 0 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--ink);
+        background: var(--bg-alt);
+        border: 1px solid var(--border);
+      }
       .account-row {
         display: flex;
         flex-direction: column;
@@ -193,6 +206,8 @@
       </svg>
       Jolt Autofill
     </h1>
+
+    <p class="error-banner" id="error-banner" role="alert" hidden></p>
 
     <!-- Signed-in account + actions: shown only while connected. -->
     <div class="account-row" id="account-row" hidden>

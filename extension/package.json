@@ -6,7 +6,8 @@
   "description": "Manifest V3 Chrome extension that autofills Jolt sessions from Google Drive.",
   "scripts": {
     "build": "tsc -b && vite build",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "zip:store": "npm run build && node scripts/package-store.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",

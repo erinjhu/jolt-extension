@@ -6,6 +6,7 @@
  */
 
 import {
+  describeAuthError,
   getSignedInSession,
   isAuthCancellation,
   signIn,
@@ -49,10 +50,19 @@ const els = {
   list: document.getElementById('session-list') as HTMLUListElement,
   syncBtn: document.getElementById('sync-btn') as HTMLButtonElement,
   status: document.getElementById('status') as HTMLParagraphElement,
+  errorBanner: document.getElementById('error-banner') as HTMLParagraphElement,
 };
 
 let sessions: SessionSummary[] = [];
 let syncedIds = new Set<string>();
+/** Stays false until a session has actually been verified. */
+let isAuthenticated = false;
+
+/** Show (or clear, with null) the monochrome auth error banner. */
+function setAuthError(message: string | null): void {
+  els.errorBanner.textContent = message ?? '';
+  els.errorBanner.hidden = !message;
+}
 
 /** Show a transient status line in one of three tones. */
 function setStatus(text: string, tone: 'ok' | 'err' | 'info' = 'info'): void {
@@ -263,11 +273,13 @@ async function onSyncSession(session: SessionSummary): Promise<void> {
 
 /** Toggle between the sign-in view and the main view by auth state. */
 function renderAuth(session: AuthSession | null): void {
-  const connected = Boolean(session);
-  els.account.textContent = session?.email ?? 'Google account connected';
-  els.accountRow.hidden = !connected;
-  els.signinView.hidden = connected;
-  els.mainView.hidden = !connected;
+  isAuthenticated = session !== null;
+  els.account.textContent = session ? (session.email ?? 'Google account connected') : '';
+  els.accountRow.hidden = !isAuthenticated;
+  els.signOutBtn.hidden = !isAuthenticated;
+  els.switchBtn.hidden = !isAuthenticated;
+  els.mainView.hidden = !isAuthenticated;
+  els.signinView.hidden = isAuthenticated;
 }
 
 /** Return the popup to its signed-out state and drop any loaded sessions. */
@@ -281,6 +293,7 @@ function resetToSignedOut(): void {
 /** Handle "Sign In with Google". */
 async function onSignIn(): Promise<void> {
   els.signinBtn.disabled = true;
+  setAuthError(null);
   setStatus('Opening Google sign-in…', 'info');
   try {
     renderAuth(await signIn());
@@ -288,8 +301,8 @@ async function onSignIn(): Promise<void> {
     await loadSessions();
   } catch (err) {
     // Closing the Google window is not an error — reset quietly.
-    if (isAuthCancellation(err)) setStatus('', 'info');
-    else setStatus(err instanceof Error ? err.message : 'Sign-in failed.', 'err');
+    setStatus('', 'info');
+    if (!isAuthCancellation(err)) setAuthError(describeAuthError(err));
   } finally {
     els.signinBtn.disabled = false;
   }
@@ -299,6 +312,7 @@ async function onSignIn(): Promise<void> {
 async function onSignOut(): Promise<void> {
   setAuthButtonsDisabled(true);
   resetToSignedOut();
+  setAuthError(null);
   setStatus('', 'info');
   try {
     await signOut();
@@ -311,14 +325,15 @@ async function onSignOut(): Promise<void> {
 async function onSwitchAccount(): Promise<void> {
   setAuthButtonsDisabled(true);
   resetToSignedOut();
+  setAuthError(null);
   setStatus('Opening Google account chooser…', 'info');
   try {
     renderAuth(await switchAccount());
     setStatus('', 'info');
     await loadSessions();
   } catch (err) {
-    if (isAuthCancellation(err)) setStatus('', 'info');
-    else setStatus(err instanceof Error ? err.message : 'Could not switch account.', 'err');
+    setStatus('', 'info');
+    if (!isAuthCancellation(err)) setAuthError(describeAuthError(err));
   } finally {
     setAuthButtonsDisabled(false);
   }
@@ -331,10 +346,14 @@ function setAuthButtonsDisabled(disabled: boolean): void {
 
 /** Resolve the current auth state on open and render the matching view. */
 async function initAuth(): Promise<void> {
-  const session = await getSignedInSession();
-  renderAuth(session);
-  if (session) {
-    await loadSessions();
+  renderAuth(null); // signed-out until verified
+  try {
+    const session = await getSignedInSession();
+    renderAuth(session);
+    if (session) await loadSessions();
+  } catch (err) {
+    renderAuth(null);
+    if (!isAuthCancellation(err)) setAuthError(describeAuthError(err));
   }
 }
 

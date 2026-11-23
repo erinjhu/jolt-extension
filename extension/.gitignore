@@ -5,3 +5,6 @@ dist/
 key.pem
 pubkey.b64
 pubkey.der
+
+jolt-autofill-store.zip
+.store-stage/

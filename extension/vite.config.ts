@@ -1,15 +1,28 @@
-import { defineConfig, Plugin } from 'vite';
-import { copyFileSync } from 'node:fs';
+import { defineConfig, loadEnv, Plugin } from 'vite';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-/** Copies `manifest.json` into the build output after the bundle is written. */
-function copyManifest(): Plugin {
+interface ManifestShape {
+  oauth2?: { client_id?: string };
+  [key: string]: unknown;
+}
+
+/**
+ * Copies `manifest.json` into the build output after the bundle is written.
+ * `JOLT_OAUTH_CLIENT_ID` (env var or `.env` file) overrides `oauth2.client_id`
+ * so the Chrome Web Store item's OAuth client can be injected at build time.
+ */
+function copyManifest(clientId: string | undefined): Plugin {
   return {
     name: 'copy-manifest',
     writeBundle() {
-      copyFileSync(
-        resolve(__dirname, 'manifest.json'),
+      const manifest = JSON.parse(
+        readFileSync(resolve(__dirname, 'manifest.json'), 'utf8'),
+      ) as ManifestShape;
+      if (clientId && manifest.oauth2) manifest.oauth2.client_id = clientId;
+      writeFileSync(
         resolve(__dirname, 'dist/manifest.json'),
+        `${JSON.stringify(manifest, null, 2)}\n`,
       );
     },
   };
@@ -23,13 +36,18 @@ function copyManifest(): Plugin {
  * independent entry points — the service worker and content script run in
  * isolated worlds, so they must not be code-split into shared chunks.
  */
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   root: __dirname,
   // Relative asset URLs so the popup HTML resolves `popup.js` from the
   // extension root regardless of how Chrome mounts the unpacked folder.
   base: './',
   publicDir: resolve(__dirname, 'public'),
-  plugins: [copyManifest()],
+  plugins: [
+    copyManifest(
+      process.env.JOLT_OAUTH_CLIENT_ID ??
+        loadEnv(mode, __dirname, 'JOLT_').JOLT_OAUTH_CLIENT_ID,
+    ),
+  ],
   // The extension bundles no CSS; disable PostCSS so the parent project's
   // Tailwind/PostCSS config is not inherited during the build.
   css: { postcss: {} },
@@ -54,4 +72,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

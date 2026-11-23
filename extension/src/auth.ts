@@ -60,6 +60,31 @@ export function isAuthCancellation(err: unknown): boolean {
   );
 }
 
+/**
+ * Turn a raw `chrome.identity` failure into a short plain-language message.
+ * Covers a bad/mismatched OAuth client id, blocked sign-in and network drops.
+ */
+export function describeAuthError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err ?? '');
+  const text = raw.toLowerCase();
+  if (
+    text.includes('invalid_client') ||
+    text.includes('bad client id') ||
+    text.includes('invalid client') ||
+    text.includes('oauth2 request failed') ||
+    text.includes('bad request')
+  ) {
+    return 'Google sign-in is not set up correctly for this version of the extension. Please update it and try again.';
+  }
+  if (text.includes('network') || text.includes('failed to fetch')) {
+    return 'Could not reach Google. Check your connection and try again.';
+  }
+  if (text.includes('not signed in') || text.includes('user is not signed in')) {
+    return 'Sign in to Chrome with a Google account, then try again.';
+  }
+  return 'Google sign-in failed. Please try again.';
+}
+
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
 /**
