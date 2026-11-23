@@ -8,6 +8,7 @@
  * the most recent `createdAt` first.
  */
 
+import { throwIfAuthExpired } from './authErrors';
 import type { JoltSessionPayload } from '../types/session';
 
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
@@ -39,6 +40,7 @@ async function findExistingFileId(
   const res = await fetch(`${DRIVE_FILES_URL}?${params.toString()}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  await throwIfAuthExpired(res);
   if (!res.ok) {
     throw new Error(`Sessions file lookup failed (HTTP ${res.status}).`);
   }
@@ -126,6 +128,8 @@ export async function writeSessionFile(
   const res = existingId
     ? await updateFileRequest(accessToken, existingId, json)
     : await createFileRequest(accessToken, folderId, json);
+
+  await throwIfAuthExpired(res);
 
   if (!res.ok) {
     throw new Error(`Could not write ${SESSIONS_FILE_NAME} (HTTP ${res.status}).`);

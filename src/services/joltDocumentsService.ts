@@ -4,6 +4,7 @@
  * returns the Docs this app created (plus any the user grants via the Picker).
  */
 
+import { throwIfAuthExpired } from './authErrors';
 import { ensureSyncFolder } from './driveFolderService';
 import { createDocInFolder, type CreatedDoc } from './googleDocsService';
 
@@ -50,6 +51,7 @@ export async function listRecentDocs(accessToken: string): Promise<TargetDoc[]> 
   const res = await fetch(`${DRIVE_FILES_URL}?${params.toString()}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  await throwIfAuthExpired(res);
   if (!res.ok) {
     throw new Error(`Could not list documents (HTTP ${res.status}).`);
   }

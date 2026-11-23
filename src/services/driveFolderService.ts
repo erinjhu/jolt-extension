@@ -4,6 +4,8 @@
  * this app created — which is exactly the folder we create here.
  */
 
+import { throwIfAuthExpired } from './authErrors';
+
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 export const SYNC_FOLDER_NAME = 'JoltSync';
@@ -35,6 +37,7 @@ async function findSyncFolderId(accessToken: string): Promise<string | null> {
   const res = await fetch(`${DRIVE_FILES_URL}?${params.toString()}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  await throwIfAuthExpired(res);
   if (!res.ok) {
     throw new Error(`Drive folder lookup failed (HTTP ${res.status}).`);
   }
@@ -53,6 +56,7 @@ async function createSyncFolder(accessToken: string): Promise<string> {
     },
     body: JSON.stringify({ name: SYNC_FOLDER_NAME, mimeType: FOLDER_MIME }),
   });
+  await throwIfAuthExpired(res);
   if (!res.ok) {
     throw new Error(`Could not create the "${SYNC_FOLDER_NAME}" folder (HTTP ${res.status}).`);
   }

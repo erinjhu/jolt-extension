@@ -15,6 +15,9 @@ import { transcribeIntoTargetDoc, transcribeViaTesseract, type TranscriptionResu
 import { useGoogleAuth } from './hooks/useGoogleAuth';
 import { useHashRoute } from './hooks/useHashRoute';
 import { defaultSessionTitle } from './utils/sessionDefaults';
+import { dataUrlToBlob } from './utils/imageFile';
+import AuthExpiryBoundary from './components/AuthExpiryBoundary';
+import { useAuthExpiry } from './hooks/useAuthExpiry';
 import { useTokenRetry } from './hooks/useTokenRetry';
 import type { CreatedDoc } from './services/googleDocsService';
 import { GUEST_USER, guestLoadText, guestSyncSession, guestTranscribe } from './services/guestDemoService';
@@ -74,14 +77,10 @@ export default function App() {
   const effectiveUser = isGuestMode ? GUEST_USER : googleUser;
   const isSignedIn = Boolean(effectiveUser);
 
-  /** Convert a data URL into a Blob for preprocessing / upload. */
-  async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
-    return (await fetch(dataUrl)).blob();
-  }
-
   // Supplies a valid OAuth token to Drive/Docs calls, refreshing on 401-style
   // auth errors (Drive "HTTP 401" and Docs "UNAUTHENTICATED"/"CREDENTIALS_MISSING").
-  const withTokenRetry = useTokenRetry(googleUser, setGoogleUser);
+  const { isExpired, markExpired } = useAuthExpiry(googleUser?.accessToken);
+  const withTokenRetry = useTokenRetry(googleUser, setGoogleUser, markExpired);
 
   /** A document was chosen; open whichever tab is active in the bottom nav. */
   function handleSelectDoc(doc: TargetDoc) {
@@ -376,7 +375,12 @@ export default function App() {
   }
 
   return (
-    <>
+    <AuthExpiryBoundary
+      withTokenRetry={withTokenRetry}
+      isExpired={isExpired}
+      isBusy={isAuthBusy}
+      onSignIn={() => void signIn()}
+    >
       <AppTopBar
         isGuest={isGuestMode}
         user={googleUser!}
@@ -477,7 +481,6 @@ export default function App() {
               Docs
             </a>
           </div>
-          
         </footer>
       </main>
 
@@ -490,6 +493,6 @@ export default function App() {
           onClose={() => setShowDocPreview(false)}
         />
       )}
-    </>
+    </AuthExpiryBoundary>
   );
 }

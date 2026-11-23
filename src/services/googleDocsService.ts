@@ -7,6 +7,8 @@
  * owns the resulting document.
  */
 
+import { throwIfAuthExpired } from './authErrors';
+
 const UPLOAD_URL =
   'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink';
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
@@ -65,6 +67,8 @@ export async function createDocInFolder(
     },
     body,
   });
+
+  await throwIfAuthExpired(res);
 
   if (!res.ok) {
     throw new Error(`Could not create the Google Doc (HTTP ${res.status}).`);
@@ -148,6 +152,7 @@ export async function fetchDocumentText(
   // Fallback: Drive plain-text export.
   const exportUrl = `${DRIVE_FILES_URL}/${cleanId}/export?mimeType=text/plain`;
   const res = await fetch(exportUrl, { headers });
+  await throwIfAuthExpired(res);
   if (!res.ok) {
     throw new Error(
       `Could not load the document text (Docs API ${docsError}, export HTTP ${res.status}).`,
@@ -227,6 +232,7 @@ export async function saveDocumentText(
     },
     body: newText,
   });
+  await throwIfAuthExpired(res);
   if (!res.ok) {
     throw new Error(`Could not save the document (HTTP ${res.status}).`);
   }
@@ -239,6 +245,7 @@ async function fetchBodyEndIndex(accessToken: string, documentId: string): Promi
   const res = await fetch(`${DOCS_API_URL}/${encodeURIComponent(documentId)}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  await throwIfAuthExpired(res);
   if (!res.ok) {
     throw new Error(`Could not read the document before appending (HTTP ${res.status}).`);
   }
@@ -284,6 +291,7 @@ export async function appendDocumentText(
       requests: [{ insertText: { location: { index: insertIndex }, text: payload } }],
     }),
   });
+  await throwIfAuthExpired(res);
   if (!res.ok) {
     throw new Error(`Could not append to the document (HTTP ${res.status}).`);
   }
@@ -327,6 +335,7 @@ export async function replaceAppendedRange(
     },
     body: JSON.stringify({ requests }),
   });
+  await throwIfAuthExpired(res);
   if (!res.ok) {
     throw new Error(`Could not update the appended text (HTTP ${res.status}).`);
   }
@@ -396,6 +405,7 @@ export async function transcribeImageWithGoogleDrive(
     headers: { Authorization: `Bearer ${accessToken}` },
     body,
   });
+  await throwIfAuthExpired(uploadRes);
   if (!uploadRes.ok) {
     throw new Error(`Drive image conversion failed (HTTP ${uploadRes.status}).`);
   }
@@ -409,6 +419,7 @@ export async function transcribeImageWithGoogleDrive(
   const exportRes = await fetch(exportUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  await throwIfAuthExpired(exportRes);
   if (!exportRes.ok) {
     throw new Error(`Could not export transcribed text (HTTP ${exportRes.status}).`);
   }

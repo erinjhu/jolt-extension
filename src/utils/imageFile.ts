@@ -16,3 +16,8 @@ export function readFileAsDataUrl(file: Blob): Promise<string> {
 export function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
 }
+
+/** Convert a data URL into a Blob for preprocessing / upload. */
+export async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  return (await fetch(dataUrl)).blob();
+}

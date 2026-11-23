@@ -10,6 +10,8 @@ import {
   guestDefaultFolder,
   guestListDocs,
 } from '../services/guestDemoService';
+import { AuthExpiredError } from '../services/authErrors';
+import { useAuthRunner } from '../context/AuthRunnerContext';
 import { isUserCancellation } from '../services/googleAuth';
 import { isPickerConfigured, pickGoogleDoc, pickGoogleFolder } from '../services/googlePicker';
 import { joltSingleLineClass } from './jolt/JoltField';
@@ -53,6 +55,9 @@ export default function DocumentSelector({
   const [destFolder, setDestFolder] = useState<TargetDoc | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Runs Drive calls with silent refresh; an expired session raises the
+  // app-level "Session expired" modal instead of an inline error here.
+  const runWithAuth = useAuthRunner(accessToken);
 
   useEffect(() => {
     if (isGuest) {
@@ -60,13 +65,16 @@ export default function DocumentSelector({
       return;
     }
     let cancelled = false;
-    listRecentDocs(accessToken)
+    runWithAuth((token) => listRecentDocs(token))
       .then((list) => !cancelled && setDocs(list))
-      .catch(() => !cancelled && setError('Could not load your documents.'));
+      .catch((err) => {
+        if (cancelled || err instanceof AuthExpiredError) return;
+        setError('Could not load your documents.');
+      });
     return () => {
       cancelled = true;
     };
-  }, [accessToken, isGuest]);
+  }, [accessToken, isGuest, runWithAuth]);
 
   /** Open the create flow, defaulting the destination folder to JoltSync. */
   async function startCreating() {
@@ -78,7 +86,7 @@ export default function DocumentSelector({
         return;
       }
       try {
-        setDestFolder(await getDefaultFolder(accessToken));
+        setDestFolder(await runWithAuth((token) => getDefaultFolder(token)));
       } catch {
         // Non-fatal: create still works, falling back to JoltSync server-side.
       }
@@ -92,7 +100,7 @@ export default function DocumentSelector({
       return;
     }
     try {
-      const folder = await pickGoogleFolder(accessToken);
+      const folder = await runWithAuth((token) => pickGoogleFolder(token));
       if (folder) setDestFolder(folder);
     } catch (err) {
       if (isUserCancellation(err)) return;
@@ -107,7 +115,7 @@ export default function DocumentSelector({
     try {
       const created = isGuest
         ? guestCreateDoc(title)
-        : await createTargetDoc(accessToken, title, destFolder?.id);
+        : await runWithAuth((token) => createTargetDoc(token, title, destFolder?.id));
       const listed = { id: created.id, name: created.name };
       setDocs((prev) => [listed, ...prev]);
       // Flag as new ONLY for this immediate selection, so it opens the full
@@ -115,8 +123,8 @@ export default function DocumentSelector({
       onSelect({ ...listed, isNew: true });
       setIsCreating(false);
       setNewTitle('');
-    } catch {
-      setError('Could not create the document.');
+    } catch (err) {
+      if (!(err instanceof AuthExpiredError)) setError('Could not create the document.');
     } finally {
       setBusy(false);
     }
@@ -129,7 +137,7 @@ export default function DocumentSelector({
       return;
     }
     try {
-      const picked = await pickGoogleDoc(accessToken);
+      const picked = await runWithAuth((token) => pickGoogleDoc(token));
       if (picked) {
         setDocs((prev) => [picked, ...prev.filter((d) => d.id !== picked.id)]);
         onSelect(picked);
