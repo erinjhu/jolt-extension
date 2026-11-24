@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { docEditUrl } from '../utils/docUrl';
+import type { ScanProgressState } from '../services/scanProgress';
 
 /**
  * Minimalist monochrome scan-progress indicator shown above the ADD MANUAL
@@ -31,6 +32,11 @@ interface ScanProgressProps {
    * blocking "Syncing session to Jolt…" state) instead of inline in the flow.
    */
   overlay?: boolean;
+  /**
+   * Real pipeline milestone (percent + step label). When given, the bar shows
+   * exactly this instead of the indeterminate creeping animation.
+   */
+  progress?: ScanProgressState | null;
 }
 
 /** Ceiling the indeterminate progress creeps toward while still scanning. */
@@ -45,9 +51,11 @@ export default function ScanProgress({
   showOpenDoc = true,
   onPreviewDoc,
   overlay = false,
+  progress = null,
 }: ScanProgressProps) {
-  const [percent, setPercent] = useState(0);
+  const [creepPercent, setPercent] = useState(0);
   const intervalRef = useRef<number | null>(null);
+  const hasRealProgress = progress !== null;
 
   useEffect(() => {
     // Clear any running creep interval before deciding the next phase.
@@ -56,7 +64,10 @@ export default function ScanProgress({
       intervalRef.current = null;
     }
 
-    if (isScanning) {
+    if (hasRealProgress) {
+      // Real milestones drive the bar; no timer needed.
+      setPercent(0);
+    } else if (isScanning) {
       // Ease toward the ceiling: bigger steps early, smaller as it approaches.
       intervalRef.current = window.setInterval(() => {
         setPercent((p) => (p >= SCANNING_CEILING ? p : p + Math.max(1, (SCANNING_CEILING - p) * 0.12)));
@@ -73,7 +84,12 @@ export default function ScanProgress({
         intervalRef.current = null;
       }
     };
-  }, [isScanning, isComplete]);
+  }, [isScanning, isComplete, hasRealProgress]);
+
+  // Derived during render: finished = 100, real milestone when supplied,
+  // otherwise the indeterminate creep; idle/error = 0.
+  const percent = isComplete ? 100 : isScanning ? (progress?.percent ?? creepPercent) : 0;
+  const activeLabel = progress?.label ?? scanningLabel;
 
   const docHref = documentId ? docEditUrl(documentId) : null;
 
@@ -116,16 +132,16 @@ export default function ScanProgress({
                 completeLabel
               )
             ) : (
-              scanningLabel
+              activeLabel
             )}
           </span>
-          <span className="font-mono text-xs text-gray-500">
-            {isComplete ? '✓' : `${Math.round(percent)}%`}
+          <span className="font-mono text-xs tabular-nums text-[#111111]">
+            {Math.round(percent)}%
           </span>
         </div>
 
         <div
-          className="h-2 w-full overflow-hidden rounded-none bg-[#F0F0F0]"
+          className="h-2 w-full overflow-hidden rounded-none border border-[#111111] bg-[#FFFFFF]"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}

@@ -7,6 +7,7 @@
 import { throwIfAuthExpired } from './authErrors';
 import { ensureSyncFolder } from './driveFolderService';
 import { createDocInFolder, type CreatedDoc } from './googleDocsService';
+import { CREATE_DOC_STAGES, type ScanProgressReporter } from './scanProgress';
 
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 const DOC_MIME = 'application/vnd.google-apps.document';
@@ -62,14 +63,22 @@ export async function listRecentDocs(accessToken: string): Promise<TargetDoc[]> 
 /**
  * Create a new, empty Google Doc named `title`. Saved in `folderId` when
  * given, otherwise in the JoltSync folder. Returns it as the active target.
+ *
+ * Reports real milestones (15 → 45 → 100) through `onProgress` as each step
+ * finishes: folder resolved, document created, ready.
  */
 export async function createTargetDoc(
   accessToken: string,
   title: string,
   folderId?: string,
+  onProgress?: ScanProgressReporter,
 ): Promise<CreatedDoc> {
+  onProgress?.(CREATE_DOC_STAGES.resolving);
   const parentId = folderId ?? (await ensureSyncFolder(accessToken));
-  return createDocInFolder(accessToken, parentId, title.trim() || 'Untitled Session', '');
+  onProgress?.(CREATE_DOC_STAGES.creating);
+  const doc = await createDocInFolder(accessToken, parentId, title.trim() || 'Untitled Session', '');
+  onProgress?.(CREATE_DOC_STAGES.ready);
+  return doc;
 }
 
 /** Resolve the default JoltSync folder as a selectable target. */

@@ -14,7 +14,12 @@ import { AuthExpiredError } from '../services/authErrors';
 import { useAuthRunner } from '../context/AuthRunnerContext';
 import { isUserCancellation } from '../services/googleAuth';
 import { isPickerConfigured, pickGoogleDoc, pickGoogleFolder } from '../services/googlePicker';
+import { CREATE_DOC_STAGES, type ScanProgressState } from '../services/scanProgress';
 import { joltSingleLineClass } from './jolt/JoltField';
+import StageProgressBar from './StageProgressBar';
+
+/** How long 100% / "Ready" stays visible before the new doc is selected. */
+const READY_HOLD_MS = 250;
 
 interface DocumentSelectorProps {
   accessToken: string;
@@ -54,6 +59,7 @@ export default function DocumentSelector({
   const [newTitle, setNewTitle] = useState('');
   const [destFolder, setDestFolder] = useState<TargetDoc | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<ScanProgressState | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Runs Drive calls with silent refresh; an expired session raises the
   // app-level "Session expired" modal instead of an inline error here.
@@ -109,13 +115,24 @@ export default function DocumentSelector({
   }
 
   async function handleCreate() {
+    if (busy) return; // ignore rapid double-clicks while a doc is being made
     const title = newTitle.trim() || buildDefaultDocTitle();
     setBusy(true);
     setError(null);
+    setProgress(CREATE_DOC_STAGES.resolving);
     try {
-      const created = isGuest
-        ? guestCreateDoc(title)
-        : await runWithAuth((token) => createTargetDoc(token, title, destFolder?.id));
+      let created: { id: string; name: string };
+      if (isGuest) {
+        setProgress(CREATE_DOC_STAGES.creating);
+        created = guestCreateDoc(title);
+        setProgress(CREATE_DOC_STAGES.ready);
+      } else {
+        created = await runWithAuth((token) =>
+          createTargetDoc(token, title, destFolder?.id, setProgress),
+        );
+      }
+      // Briefly hold on 100% before handing over to the created-doc state.
+      await new Promise<void>((resolve) => window.setTimeout(resolve, READY_HOLD_MS));
       const listed = { id: created.id, name: created.name };
       setDocs((prev) => [listed, ...prev]);
       // Flag as new ONLY for this immediate selection, so it opens the full
@@ -127,6 +144,7 @@ export default function DocumentSelector({
       if (!(err instanceof AuthExpiredError)) setError('Could not create the document.');
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -178,6 +196,7 @@ export default function DocumentSelector({
             placeholder="New document title"
             className={`${joltSingleLineClass} font-mono`}
             autoFocus
+            disabled={busy}
           />
 
           {!isGuest && (
@@ -188,7 +207,8 @@ export default function DocumentSelector({
               <button
                 type="button"
                 onClick={() => void handleChooseFolder()}
-                className="whitespace-nowrap rounded-none border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-black transition hover:bg-gray-100"
+                disabled={busy}
+                className="whitespace-nowrap rounded-none border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-black transition hover:bg-gray-100 disabled:opacity-40"
               >
                 Choose Folder…
               </button>
@@ -202,16 +222,19 @@ export default function DocumentSelector({
               disabled={busy}
               className="whitespace-nowrap rounded-none bg-black px-4 py-1.5 text-xs font-bold uppercase text-white disabled:opacity-40"
             >
-              Create
+              {busy ? 'Creating...' : 'Create'}
             </button>
             <button
               type="button"
               onClick={() => setIsCreating(false)}
-              className="whitespace-nowrap rounded-none border border-gray-300 bg-white px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-black hover:bg-gray-100"
+              disabled={busy}
+              className="whitespace-nowrap rounded-none border border-gray-300 bg-white px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-black hover:bg-gray-100 disabled:opacity-40"
             >
               Cancel
             </button>
           </div>
+
+          {progress && <StageProgressBar progress={progress} />}
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">

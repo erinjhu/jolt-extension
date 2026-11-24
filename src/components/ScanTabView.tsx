@@ -1,3 +1,4 @@
+import { useScanProgress } from '../hooks/useScanProgress';
 import LeaveSessionModal from './LeaveSessionModal';
 import PhotoUploadLanding from './PhotoUploadLanding';
 import ScanProgress from './ScanProgress';
@@ -45,6 +46,7 @@ interface ScanTabViewProps {
 }
 
 export default function ScanTabView(props: ScanTabViewProps) {
+  const scanProgress = useScanProgress();
   const {
     accessToken,
     flowKey,
@@ -115,6 +117,7 @@ export default function ScanTabView(props: ScanTabViewProps) {
             isComplete={scanComplete}
             documentId={syncedDocId ?? null}
             onPreviewDoc={isGuest ? onPreviewDoc : undefined}
+            progress={isTranscribing && isSignedIn && !isGuest ? scanProgress : null}
           />
         </div>
       )}

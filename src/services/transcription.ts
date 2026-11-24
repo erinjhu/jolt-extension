@@ -12,6 +12,12 @@ import { ensureSyncFolder } from './driveFolderService';
 import { docEditUrl } from '../utils/docUrl';
 import { transcribeImageWithGoogleDrive, trashDriveFile } from './googleDocsService';
 import { recognizeHandwriting } from './ocrService';
+import {
+  reportScanProgress,
+  resetScanProgress,
+  SCAN_STAGES,
+  type ScanProgressReporter,
+} from './scanProgress';
 
 export type TranscriptionSource = 'google-drive' | 'tesseract';
 
@@ -33,9 +39,12 @@ export async function transcribeViaGoogleDrive(
   accessToken: string,
   imageBlob: Blob,
   docTitle: string,
+  onProgress: ScanProgressReporter = reportScanProgress,
 ): Promise<TranscriptionResult> {
+  onProgress(SCAN_STAGES.creating);
   const processed = await preprocessImageForOcr(imageBlob);
   const folderId = await ensureSyncFolder(accessToken);
+  onProgress(SCAN_STAGES.uploading);
   const result = await transcribeImageWithGoogleDrive(
     accessToken,
     folderId,
@@ -43,6 +52,7 @@ export async function transcribeViaGoogleDrive(
     docTitle,
     processed.mimeType,
   );
+  onProgress(SCAN_STAGES.appending);
 
   return {
     text: result.extractedText,
@@ -60,6 +70,9 @@ export async function transcribeViaGoogleDrive(
  * resolves to the doc the text was actually written to.
  *
  * With no `targetDocId` the scratch doc itself becomes the target.
+ *
+ * Reports real milestones through `onProgress` (0 → 25 → 65 → 90 → 100) and
+ * resets the bar before re-throwing if any step fails.
  */
 export async function transcribeIntoTargetDoc(
   accessToken: string,
@@ -67,13 +80,25 @@ export async function transcribeIntoTargetDoc(
   docTitle: string,
   targetDocId: string | null,
   appendToTarget: (docId: string, text: string) => Promise<void>,
+  onProgress: ScanProgressReporter = reportScanProgress,
 ): Promise<TranscriptionResult> {
-  const ocr = await transcribeViaGoogleDrive(accessToken, imageBlob, docTitle);
-  if (!targetDocId || !ocr.docId || ocr.docId === targetDocId) return ocr;
+  try {
+    const ocr = await transcribeViaGoogleDrive(accessToken, imageBlob, docTitle, onProgress);
+    if (!targetDocId || !ocr.docId || ocr.docId === targetDocId) {
+      onProgress(SCAN_STAGES.done);
+      return ocr;
+    }
 
-  await appendToTarget(targetDocId, ocr.text);
-  await trashDriveFile(accessToken, ocr.docId);
-  return { ...ocr, docId: targetDocId, webViewLink: docEditUrl(targetDocId) };
+    await appendToTarget(targetDocId, ocr.text);
+    onProgress(SCAN_STAGES.finalizing);
+    await trashDriveFile(accessToken, ocr.docId);
+    onProgress(SCAN_STAGES.done);
+    // Single source of truth: every link resolves to the target doc.
+    return { ...ocr, docId: targetDocId, webViewLink: docEditUrl(targetDocId) };
+  } catch (err) {
+    resetScanProgress();
+    throw err;
+  }
 }
 
 /** Transcribe locally with Tesseract.js (offline fallback). */
