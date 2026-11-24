@@ -67,7 +67,7 @@ export default function App() {
     );
   const {
     user: googleUser, isRestoring, isBusy: isAuthBusy, error: authError,
-    signIn, signOut, switchAccount, setUser: setGoogleUser,
+    signIn, signOut, switchAccount, setUser: setGoogleUser, driveAccess,
   } = useGoogleAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncedDoc, setSyncedDoc] = useState<CreatedDoc | null>(null);
@@ -377,9 +377,9 @@ export default function App() {
   return (
     <AuthExpiryBoundary
       withTokenRetry={withTokenRetry}
-      isExpired={isExpired}
-      isBusy={isAuthBusy}
+      isExpired={isExpired} isBusy={isAuthBusy}
       onSignIn={() => void signIn()}
+      driveAccess={driveAccess}
     >
       <AppTopBar
         isGuest={isGuestMode}

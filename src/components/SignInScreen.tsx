@@ -60,8 +60,10 @@ export default function SignInScreen({ isBusy, error, onSignIn, onGuestMode }: S
             {isBusy ? 'Signing in…' : 'Sign in with Google'}
           </button>
 
+        
+
           <p className="text-center font-mono text-xs leading-relaxed text-[#666666]">
-            Beta: If Google shows an unverified app screen, click "Advanced" → "Go to Jolt Extension" to continue.
+            If Google shows an unverified app screen, click "Advanced" → "Go to Jolt Extension" to continue.
           </p>
         </div>
 

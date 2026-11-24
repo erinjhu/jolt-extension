@@ -22,6 +22,8 @@ export interface StoredAuthSession {
   /** Absolute expiry as epoch-ms (`Date.now() + expires_in * 1000`). */
   expiresAt: number;
   profile: GoogleProfile;
+  /** False when the user left the Drive permission unchecked. Absent on older sessions. */
+  hasDriveScope?: boolean;
 }
 
 /** Save the session, overwriting any previous one. */

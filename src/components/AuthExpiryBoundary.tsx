@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { AuthRunnerContext, type AuthRunner } from '../context/AuthRunnerContext';
+import { DriveAccessContext, type DriveAccess } from '../context/DriveAccessContext';
 
 interface AuthExpiryBoundaryProps {
   /** Token-retrying runner shared with descendants (doc picker, etc.). */
@@ -10,6 +11,8 @@ interface AuthExpiryBoundaryProps {
   isBusy: boolean;
   /** Starts the interactive Google sign-in. */
   onSignIn: () => void;
+  /** Drive-permission state + the consent re-run, shared with descendants. */
+  driveAccess: DriveAccess;
   children: ReactNode;
 }
 
@@ -24,11 +27,12 @@ export default function AuthExpiryBoundary({
   isExpired,
   isBusy,
   onSignIn,
+  driveAccess,
   children,
 }: AuthExpiryBoundaryProps) {
   return (
     <AuthRunnerContext.Provider value={withTokenRetry}>
-      {children}
+      <DriveAccessContext.Provider value={driveAccess}>{children}</DriveAccessContext.Provider>
       {isExpired && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
           <div

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { DriveAccess } from '../context/DriveAccessContext';
 import {
   hasStoredSession,
   restoreSession,
@@ -28,6 +29,8 @@ export interface GoogleAuthState {
   switchAccount: () => Promise<boolean>;
   /** Replace the user, e.g. after a silent token refresh. */
   setUser: (user: GoogleUser | null) => void;
+  /** Drive-permission state and the "Grant Drive Access" action. */
+  driveAccess: DriveAccess;
 }
 
 /**
@@ -112,5 +115,29 @@ export function useGoogleAuth(): GoogleAuthState {
     }
   }, []);
 
-  return { user, isRestoring, isBusy, error, signIn, signOut, switchAccount, setUser };
+  /** Re-run consent so Google shows the permission boxes again. */
+  const grantDriveAccess = useCallback(async (): Promise<string | null> => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      const granted = await requestSignIn();
+      setUser(granted);
+      return granted.hasDriveScope ? granted.accessToken : null;
+    } catch (err) {
+      if (!isUserCancellation(err)) {
+        setError(err instanceof Error ? err.message : 'Could not update Google permissions.');
+      }
+      return null;
+    } finally {
+      setIsBusy(false);
+    }
+  }, []);
+
+  const hasDriveScope = user?.hasDriveScope !== false;
+  const driveAccess = useMemo<DriveAccess>(
+    () => ({ hasDriveScope, grant: grantDriveAccess }),
+    [hasDriveScope, grantDriveAccess],
+  );
+
+  return { user, isRestoring, isBusy, error, signIn, signOut, switchAccount, setUser, driveAccess };
 }

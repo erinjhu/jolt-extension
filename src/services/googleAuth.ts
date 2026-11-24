@@ -36,7 +36,20 @@ export const OAUTH_SCOPES = [
 
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
 
+/** Scopes that authorize the Drive calls this app makes. */
+const DRIVE_SCOPES = new Set([
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/drive',
+]);
+
+/** True when a granted-scope string (space-separated) includes Drive access. */
+export function grantsDriveScope(scope: string | undefined): boolean {
+  return (scope ?? '').split(/\s+/).some((s) => DRIVE_SCOPES.has(s));
+}
+
 export interface GoogleUser {
+  /** False when sign-in succeeded but the Drive permission was left unchecked. */
+  hasDriveScope: boolean;
   accessToken: string;
   email: string | null;
   name: string | null;
@@ -162,12 +175,15 @@ function requestToken(prompt: GisTokenRequestOverrides['prompt']): Promise<GisTo
 /** Exchange a token response for a GoogleUser and persist the session. */
 async function completeSignIn(response: GisTokenResponse): Promise<GoogleUser> {
   const profile = await fetchProfile(response.access_token);
+  // Partial consent: signed in, but the Drive checkbox was left unticked.
+  const hasDriveScope = grantsDriveScope(response.scope);
   saveSession({
     accessToken: response.access_token,
     expiresAt: Date.now() + response.expires_in * 1000,
     profile,
+    hasDriveScope,
   });
-  return { accessToken: response.access_token, ...profile };
+  return { accessToken: response.access_token, hasDriveScope, ...profile };
 }
 
 /** Interactive sign-in: show the consent UI, then persist the session. */
@@ -211,7 +227,12 @@ export function hasStoredSession(): boolean {
 export async function restoreSession(): Promise<GoogleUser | null> {
   const stored = readSession();
   if (isSessionValid(stored)) {
-    return { accessToken: stored.accessToken, ...stored.profile };
+    // Sessions saved before scope tracking are assumed fine; a 403 will tell.
+    return {
+      accessToken: stored.accessToken,
+      hasDriveScope: stored.hasDriveScope ?? true,
+      ...stored.profile,
+    };
   }
   if (!stored) return null;
 

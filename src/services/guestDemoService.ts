@@ -20,6 +20,7 @@ export const GUEST_FOLDER_NAME = 'My Drive (Demo)';
 
 /** Synthetic user that satisfies the auth gate + header without real OAuth. */
 export const GUEST_USER: GoogleUser = {
+  hasDriveScope: true,
   accessToken: 'guest-demo',
   email: 'guest@demo.local',
   name: 'Guest',
