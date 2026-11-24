@@ -8,8 +8,10 @@
  */
 
 import {
+  assertDriveScope,
   AuthRevokedOrExpiredError,
   clearAuthState,
+  MissingDrivePermissionError,
   getValidToken,
   invalidateToken,
 } from './auth';
@@ -32,6 +34,32 @@ function escapeDriveQuery(value: string): string {
 
 interface DriveFileListResponse {
   files?: Array<{ id: string; name: string }>;
+}
+
+/** Drive reasons meaning "this token was never granted the Drive scope". */
+const SCOPE_REASON =
+  /insufficientpermissions|access_token_scope_insufficient|insufficient authentication scopes/i;
+
+/**
+ * Throw `MissingDrivePermissionError` for a 403 caused by an ungranted scope.
+ * Other 403s (quota, file access) are left for the caller's normal handling.
+ */
+async function throwIfMissingScope(res: Response): Promise<void> {
+  if (res.status !== 403) return;
+  try {
+    const body = (await res.clone().json()) as {
+      error?: { status?: string; message?: string; errors?: Array<{ reason?: string }> };
+    };
+    const haystack = [
+      body.error?.status,
+      body.error?.message,
+      ...(body.error?.errors ?? []).map((e) => e.reason),
+    ].join(' ');
+    if (SCOPE_REASON.test(haystack)) throw new MissingDrivePermissionError();
+  } catch (err) {
+    if (err instanceof MissingDrivePermissionError) throw err;
+    // Unparseable body: treat as an ordinary 403.
+  }
 }
 
 /** Drive still says 401: the grant is dead. Clear it and surface a typed error. */
@@ -63,9 +91,11 @@ async function driveFetch(
       headers: { Authorization: `Bearer ${freshToken}` },
     });
     if (retried.status === 401) await failAsRevoked();
+    await throwIfMissingScope(retried);
     return retried;
   }
   if (res.status === 401) await failAsRevoked();
+  await throwIfMissingScope(res);
 
   return res;
 }
@@ -251,6 +281,9 @@ async function cacheSessions(
 /** Download + validate the full (image-bearing) session list from Drive. */
 async function fetchAllSessions(): Promise<JoltSessionPayload[]> {
   const token = await getValidToken();
+  // Granular consent lets users sign in without ticking Drive; catch that
+  // up front instead of failing on the first Drive call.
+  await assertDriveScope(token);
   const folderId = await findSyncFolderId(token);
   if (!folderId) return [];
   const fileId = await findSessionsFileId(folderId, token);

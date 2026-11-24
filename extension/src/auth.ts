@@ -76,6 +76,23 @@ export class AuthRevokedOrExpiredError extends Error {
   }
 }
 
+/** Shown when sign-in succeeded but the Google Drive permission box was left unchecked. */
+export const MISSING_DRIVE_MESSAGE =
+  "Google Drive access wasn't granted during sign-in. Click below and check the Google Drive permission box on Google's sign-in screen to sync your sessions.";
+
+/**
+ * Thrown when the token lacks the Drive scope (Google's granular consent let
+ * the user sign in without ticking Drive), or Drive answers 403
+ * `insufficientPermissions` / `ACCESS_TOKEN_SCOPE_INSUFFICIENT`. The user is
+ * still signed in; the fix is to grant Drive access again.
+ */
+export class MissingDrivePermissionError extends Error {
+  constructor(message: string = MISSING_DRIVE_MESSAGE) {
+    super(message);
+    this.name = 'MissingDrivePermissionError';
+  }
+}
+
 /** True for revoked/expired-credential failures (typed error or Chrome/Google text). */
 export function isAuthRevokedOrExpired(err: unknown): boolean {
   if (err instanceof AuthRevokedOrExpiredError) return true;
@@ -264,6 +281,65 @@ export async function clearAuthState(): Promise<void> {
       AUTH_EMAIL_KEY,
     ]);
   }
+}
+
+const TOKENINFO_URL = 'https://www.googleapis.com/oauth2/v3/tokeninfo';
+
+/** Scopes that let the extension read `jolt_sessions.json` written by the web app. */
+const DRIVE_READ_SCOPES = new Set([
+  'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/drive',
+]);
+
+/**
+ * Ask Google which scopes `token` actually carries. Returns true/false for
+ * "has Drive read access", or null when that can't be determined (offline,
+ * invalid token) — an unknown result never blocks a sync; Drive's own 401/403
+ * responses are still handled.
+ */
+async function tokenHasDriveScope(token: string): Promise<boolean | null> {
+  try {
+    const res = await fetch(`${TOKENINFO_URL}?access_token=${encodeURIComponent(token)}`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as { scope?: string };
+    if (typeof body.scope !== 'string') return null;
+    return body.scope.split(/\s+/).some((s) => DRIVE_READ_SCOPES.has(s));
+  } catch {
+    return null;
+  }
+}
+
+/** Throw `MissingDrivePermissionError` when `token` is known to lack Drive access. */
+export async function assertDriveScope(token: string): Promise<void> {
+  if ((await tokenHasDriveScope(token)) === false) throw new MissingDrivePermissionError();
+}
+
+/**
+ * Re-run Google consent so the Drive checkbox is shown again. The scope-less
+ * token is removed from Chrome's cache (and revoked, since Chrome would
+ * otherwise reuse the existing partial grant instead of asking), then an
+ * interactive `getAuthToken` runs. Throws `AuthCancelledError` if the user
+ * backs out, or `MissingDrivePermissionError` if Drive is still unchecked.
+ */
+export async function grantDriveAccess(): Promise<AuthSession> {
+  let stale: string | null = (await readStoredToken())?.token ?? null;
+  if (!stale) {
+    try {
+      stale = await getAuthToken(false);
+    } catch {
+      stale = null;
+    }
+  }
+  if (stale) {
+    await revokeToken(stale);
+    await removeCachedToken(stale);
+  }
+  await clearStoredToken();
+  await clearChromeTokenCache();
+
+  const session = await signIn();
+  await assertDriveScope(session.token);
+  return session;
 }
 
 /**

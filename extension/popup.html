@@ -179,6 +179,19 @@
         color: var(--ink);
         font-weight: 600;
       }
+      .alert-card {
+        margin: 0 0 12px;
+        padding: 10px 12px;
+        background: var(--bg-alt);
+        border: 1px solid var(--border);
+      }
+      .alert-card p {
+        margin: 0 0 10px;
+        font-size: 12px;
+      }
+      .alert-card button {
+        margin-bottom: 0;
+      }
       .error-banner {
         margin: 0 0 10px;
         padding: 8px 10px;
@@ -260,6 +273,16 @@
     <!-- Main view: shown only after the user is connected. -->
     <section id="main-view" hidden>
       <button class="secondary" id="sync-btn">Refresh Sessions</button>
+
+      <!-- Shown when sign-in succeeded but the Drive permission was unchecked. -->
+      <div class="alert-card" id="drive-access-card" role="alert" hidden>
+        <p>
+          Google Drive access wasn't granted during sign-in. Click below and
+          check the Google Drive permission box on Google's sign-in screen to
+          sync your sessions.
+        </p>
+        <button class="primary" id="grant-drive-btn">Grant Drive Access</button>
+      </div>
 
       <div class="empty-state" id="session-empty" hidden>
         <p class="empty-title">No synced sessions found yet.</p>

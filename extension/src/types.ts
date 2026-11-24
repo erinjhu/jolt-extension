@@ -80,6 +80,9 @@ export type MessageResponse<T = unknown> =
   | {
       ok: false;
       error: string;
-      /** `AUTH_EXPIRED`: the Google session was revoked/expired — sign in again. */
-      code?: 'AUTH_EXPIRED';
+      /**
+       * `AUTH_EXPIRED`: the Google session was revoked/expired — sign in again.
+       * `DRIVE_PERMISSION`: signed in, but the Drive permission wasn't granted.
+       */
+      code?: 'AUTH_EXPIRED' | 'DRIVE_PERMISSION';
     };

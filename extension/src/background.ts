@@ -11,7 +11,12 @@ import {
   markSessionSynced,
   syncFromDrive,
 } from './driveFetcher';
-import { AUTH_EXPIRED_MESSAGE, isAuthRevokedOrExpired } from './auth';
+import {
+  AUTH_EXPIRED_MESSAGE,
+  isAuthRevokedOrExpired,
+  MISSING_DRIVE_MESSAGE,
+  MissingDrivePermissionError,
+} from './auth';
 import { ExtensionMessage, MessageResponse } from './types';
 
 /** Normalize any thrown value into a readable error string. */
@@ -59,9 +64,14 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
     .catch((err: unknown) => {
       // Auth failures keep their own code so the popup shows "sign in again"
       // instead of a generic (or timeout) message.
-      const response: MessageResponse = isAuthRevokedOrExpired(err)
-        ? { ok: false, error: AUTH_EXPIRED_MESSAGE, code: 'AUTH_EXPIRED' }
-        : { ok: false, error: toErrorMessage(err) };
+      let response: MessageResponse;
+      if (err instanceof MissingDrivePermissionError) {
+        response = { ok: false, error: MISSING_DRIVE_MESSAGE, code: 'DRIVE_PERMISSION' };
+      } else if (isAuthRevokedOrExpired(err)) {
+        response = { ok: false, error: AUTH_EXPIRED_MESSAGE, code: 'AUTH_EXPIRED' };
+      } else {
+        response = { ok: false, error: toErrorMessage(err) };
+      }
       sendResponse(response);
     });
   // Returning true keeps the message channel open for the async response.

@@ -10,8 +10,10 @@ import {
   clearAuthState,
   describeAuthError,
   getSignedInSession,
+  grantDriveAccess,
   isAuthCancellation,
   isAuthRevokedOrExpired,
+  MissingDrivePermissionError,
   signIn,
   signOut,
   switchAccount,
@@ -52,6 +54,8 @@ const els = {
   empty: document.getElementById('session-empty') as HTMLElement,
   list: document.getElementById('session-list') as HTMLUListElement,
   syncBtn: document.getElementById('sync-btn') as HTMLButtonElement,
+  driveCard: document.getElementById('drive-access-card') as HTMLElement,
+  grantDriveBtn: document.getElementById('grant-drive-btn') as HTMLButtonElement,
   status: document.getElementById('status') as HTMLParagraphElement,
   errorBanner: document.getElementById('error-banner') as HTMLParagraphElement,
 };
@@ -98,6 +102,20 @@ async function sendToBackground<T>(message: ExtensionMessage): Promise<MessageRe
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+/** True when the background reported the Drive permission as not granted. */
+function isDrivePermissionResponse<T>(res: MessageResponse<T>): boolean {
+  return !res.ok && res.code === 'DRIVE_PERMISSION';
+}
+
+/**
+ * Show or hide the "Grant Drive Access" card. While it is showing, the
+ * "No synced sessions" empty state is hidden so the two never contradict.
+ */
+function setDriveAccessNeeded(needed: boolean): void {
+  els.driveCard.hidden = !needed;
+  if (needed) els.empty.hidden = true;
 }
 
 /** True when the background reported a revoked/expired Google session. */
@@ -221,6 +239,7 @@ async function onSyncFromDrive(): Promise<void> {
   try {
     const res = await sendToBackground<CachedSessions>({ type: 'SYNC_FROM_DRIVE' });
     if (res.ok) {
+      setDriveAccessNeeded(false);
       sessions = res.data.sessions;
       renderList();
       setStatus(
@@ -229,13 +248,39 @@ async function onSyncFromDrive(): Promise<void> {
       );
     } else if (isExpiredResponse(res)) {
       await expireSession();
+    } else if (isDrivePermissionResponse(res)) {
+      // Still signed in: stop the spinner and offer to grant Drive access.
+      setStatus('', 'info');
+      setDriveAccessNeeded(true);
     } else {
       setStatus(res.error, 'err');
     }
   } catch (err) {
     setStatus(err instanceof Error ? err.message : 'Sync failed.', 'err');
   } finally {
+    // Always release the button and never leave "Syncing…" on screen.
     els.syncBtn.disabled = false;
+    if (els.status.textContent?.startsWith('Syncing')) setStatus('', 'info');
+  }
+}
+
+/** Handle "Grant Drive Access": re-run consent, then sync again on success. */
+async function onGrantDriveAccess(): Promise<void> {
+  els.grantDriveBtn.disabled = true;
+  setAuthError(null);
+  setStatus('Opening Google sign-in…', 'info');
+  try {
+    renderAuth(await grantDriveAccess());
+    setDriveAccessNeeded(false);
+    setStatus('', 'info');
+    await onSyncFromDrive();
+  } catch (err) {
+    setStatus('', 'info');
+    if (err instanceof MissingDrivePermissionError) setDriveAccessNeeded(true);
+    else if (isAuthRevokedOrExpired(err)) setAuthError(AUTH_EXPIRED_MESSAGE);
+    else if (!isAuthCancellation(err)) setAuthError(describeAuthError(err));
+  } finally {
+    els.grantDriveBtn.disabled = false;
   }
 }
 
@@ -291,7 +336,10 @@ async function onSyncSession(session: SessionSummary): Promise<void> {
     });
     if (!payloadRes.ok) {
       if (isExpiredResponse(payloadRes)) await expireSession();
-      else setStatus(payloadRes.error, 'err');
+      else if (isDrivePermissionResponse(payloadRes)) {
+        setStatus('', 'info');
+        setDriveAccessNeeded(true);
+      } else setStatus(payloadRes.error, 'err');
       return;
     }
 
@@ -341,6 +389,7 @@ function resetToSignedOut(): void {
   syncedIds = new Set();
   renderList();
   renderAuth(null);
+  setDriveAccessNeeded(false);
 }
 
 /** Handle "Sign In with Google". */
@@ -413,6 +462,7 @@ async function initAuth(): Promise<void> {
 }
 
 els.signinBtn.addEventListener('click', () => void onSignIn());
+els.grantDriveBtn.addEventListener('click', () => void onGrantDriveAccess());
 els.signOutBtn.addEventListener('click', () => void onSignOut());
 els.switchBtn.addEventListener('click', () => void onSwitchAccount());
 els.syncBtn.addEventListener('click', () => void onSyncFromDrive());
