@@ -46,7 +46,7 @@ const els = {
   mainView: document.getElementById('main-view') as HTMLElement,
   signOutBtn: document.getElementById('signout-btn') as HTMLButtonElement,
   switchBtn: document.getElementById('switch-btn') as HTMLButtonElement,
-  empty: document.getElementById('session-empty') as HTMLParagraphElement,
+  empty: document.getElementById('session-empty') as HTMLElement,
   list: document.getElementById('session-list') as HTMLUListElement,
   syncBtn: document.getElementById('sync-btn') as HTMLButtonElement,
   status: document.getElementById('status') as HTMLParagraphElement,
@@ -70,9 +70,23 @@ function setStatus(text: string, tone: 'ok' | 'err' | 'info' = 'info'): void {
   els.status.className = tone;
 }
 
-/** Send a typed message to the background worker. */
+/** Longest the popup waits on the background worker before giving up. */
+const BACKGROUND_TIMEOUT_MS = 30_000;
+
+/**
+ * Send a typed message to the background worker. Rejects after a timeout so a
+ * worker that never answers can't leave the UI waiting forever.
+ */
 function sendToBackground<T>(message: ExtensionMessage): Promise<MessageResponse<T>> {
-  return chrome.runtime.sendMessage(message) as Promise<MessageResponse<T>>;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('Google Drive took too long to respond. Please try again.')),
+      BACKGROUND_TIMEOUT_MS,
+    );
+    (chrome.runtime.sendMessage(message) as Promise<MessageResponse<T>>)
+      .then(resolve, reject)
+      .finally(() => clearTimeout(timer));
+  });
 }
 
 /** Format a session's date/time and duration for the row subtitle. */
@@ -154,16 +168,20 @@ function refreshRowAction(session: SessionSummary): void {
 
 /** Load the cached sessions + synced ids and render them on open. */
 async function loadSessions(): Promise<void> {
-  const [listRes, idsRes] = await Promise.all([
-    sendToBackground<CachedSessions>({ type: 'GET_CACHED_SESSIONS' }),
-    sendToBackground<string[]>({ type: 'GET_SYNCED_IDS' }),
-  ]);
-  if (idsRes.ok) syncedIds = new Set(idsRes.data);
-  if (listRes.ok) {
-    sessions = listRes.data.sessions;
-    renderList();
-  } else {
-    setStatus(listRes.error, 'err');
+  try {
+    const [listRes, idsRes] = await Promise.all([
+      sendToBackground<CachedSessions>({ type: 'GET_CACHED_SESSIONS' }),
+      sendToBackground<string[]>({ type: 'GET_SYNCED_IDS' }),
+    ]);
+    if (idsRes.ok) syncedIds = new Set(idsRes.data);
+    if (listRes.ok) {
+      sessions = listRes.data.sessions;
+      renderList();
+    } else {
+      setStatus(listRes.error, 'err');
+    }
+  } catch (err) {
+    setStatus(err instanceof Error ? err.message : 'Could not load sessions.', 'err');
   }
 }
 
@@ -176,7 +194,10 @@ async function onSyncFromDrive(): Promise<void> {
     if (res.ok) {
       sessions = res.data.sessions;
       renderList();
-      setStatus(`Fetched ${sessions.length} session(s).`, 'ok');
+      setStatus(
+        sessions.length === 0 ? '' : `Fetched ${sessions.length} session(s).`,
+        'ok',
+      );
     } else {
       setStatus(res.error, 'err');
     }

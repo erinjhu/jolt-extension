@@ -42,6 +42,37 @@
         color: var(--muted);
         padding: 12px 0;
       }
+      .empty-state {
+        margin: 0 0 12px;
+        padding: 12px;
+        background: var(--bg-alt);
+        border: 1px solid var(--border);
+      }
+      .empty-state p {
+        margin: 0 0 8px;
+      }
+      .empty-title {
+        font-weight: 600;
+      }
+      .empty-body {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .link-btn {
+        display: block;
+        padding: 8px 12px;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        color: var(--ink);
+        background: var(--bg);
+        border: 1px solid var(--border);
+      }
+      .link-btn:hover {
+        background: var(--ink);
+        color: var(--bg);
+      }
       .session-list {
         list-style: none;
         margin: 0 0 12px;
@@ -230,9 +261,20 @@
     <section id="main-view" hidden>
       <button class="secondary" id="sync-btn">Refresh Sessions</button>
 
-      <p class="empty" id="session-empty" hidden>
-        No sessions yet. Click “Refresh Sessions” to load them.
-      </p>
+      <div class="empty-state" id="session-empty" hidden>
+        <p class="empty-title">No synced sessions found yet.</p>
+        <p class="empty-body">
+          Create or scan a session in the Jolt Extension web app first, then
+          click “Refresh Sessions” again.
+        </p>
+        <a
+          class="link-btn"
+          href="https://erinjhu.github.io/jolt-extension/"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Open Jolt Extension web app</a
+        >
+      </div>
       <ul class="session-list" id="session-list" hidden></ul>
     </section>
 

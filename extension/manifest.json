@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Jolt Autofill",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Reads the latest synced Jolt session from Google Drive and autofills the Jolt 'Add Manual Session' form.",
   "minimum_chrome_version": "116",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwJx6LcngiY6aVZGjEI0TE40Ztqsf+LySTmarf/JddvTKGaUr+T9ocNqwZQ6GxgfnR07o5DBYLL+HskvR0SAmXY6xWRbLx1IzvCfAPKTh0zvQs3KJ3y4Nw4gUKiyXM1FDkN+gLu6XjOFG6pl1rKzD/pt9KPM27d12sSshfjbUdQZQuzpEA0yaKKdeUxcPAtuzlK0p9sSbznyXltXf6A2AmHNSADzk0itHnx8yx7E6n/AhOagOZTTmRoW6B8wCL6qmMTKh1rb+oan5qeYNYQ1xIt1trOxbS73WENLpeG6knPxCD3uBhr//Eo89MjrBKQ/W5XvPlfoTPkvqCJ3cCnOwaQIDAQAB",

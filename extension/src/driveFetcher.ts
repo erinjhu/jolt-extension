@@ -55,8 +55,11 @@ async function driveFetch(
   return res;
 }
 
-/** Find the id of the first non-trashed `JoltSync` folder owned by the user. */
-async function findSyncFolderId(token: string): Promise<string> {
+/**
+ * Find the id of the first non-trashed `JoltSync` folder, or null when it has
+ * not been created yet (a normal first-run state, not an error).
+ */
+async function findSyncFolderId(token: string): Promise<string | null> {
   const q = [
     `name = '${escapeDriveQuery(SYNC_FOLDER_NAME)}'`,
     "mimeType = 'application/vnd.google-apps.folder'",
@@ -76,20 +79,14 @@ async function findSyncFolderId(token: string): Promise<string> {
   }
 
   const body = (await res.json()) as DriveFileListResponse;
-  const folder = body.files?.[0];
-  if (!folder) {
-    throw new Error(
-      `Could not find a "${SYNC_FOLDER_NAME}" folder in your Google Drive.`,
-    );
-  }
-  return folder.id;
+  return body.files?.[0]?.id ?? null;
 }
 
-/** Find the id of `jolt_sessions.json` within the given folder. */
+/** Find the id of `jolt_sessions.json` in the folder, or null when absent. */
 async function findSessionsFileId(
   folderId: string,
   token: string,
-): Promise<string> {
+): Promise<string | null> {
   const q = [
     `name = '${escapeDriveQuery(SESSIONS_FILE_NAME)}'`,
     `'${escapeDriveQuery(folderId)}' in parents`,
@@ -110,13 +107,7 @@ async function findSessionsFileId(
   }
 
   const body = (await res.json()) as DriveFileListResponse;
-  const file = body.files?.[0];
-  if (!file) {
-    throw new Error(
-      `"${SESSIONS_FILE_NAME}" was not found inside the "${SYNC_FOLDER_NAME}" folder.`,
-    );
-  }
-  return file.id;
+  return body.files?.[0]?.id ?? null;
 }
 
 /** Download and parse the JSON content of a Drive file. */
@@ -205,6 +196,11 @@ function validatePayload(raw: unknown): JoltSessionPayload {
  * single-object file, so older syncs keep working.
  */
 function parseSessions(raw: unknown): JoltSessionPayload[] {
+  // A blank file, empty array or empty object just means no sessions yet.
+  if (raw === null || raw === undefined) return [];
+  if (Array.isArray(raw) && raw.length === 0) return [];
+  if (typeof raw === 'object' && Object.keys(raw).length === 0) return [];
+
   const items: unknown[] =
     raw && typeof raw === 'object' && Array.isArray((raw as { sessions?: unknown[] }).sessions)
       ? (raw as { sessions: unknown[] }).sessions
@@ -241,7 +237,9 @@ async function cacheSessions(
 async function fetchAllSessions(): Promise<JoltSessionPayload[]> {
   const token = await getValidToken();
   const folderId = await findSyncFolderId(token);
+  if (!folderId) return [];
   const fileId = await findSessionsFileId(folderId, token);
+  if (!fileId) return [];
   const raw = await downloadSessionFile(fileId, token);
   return parseSessions(raw);
 }
