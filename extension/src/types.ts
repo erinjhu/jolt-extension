@@ -77,4 +77,9 @@ export type ExtensionMessage =
 /** Uniform response envelope for message handlers. */
 export type MessageResponse<T = unknown> =
   | { ok: true; data: T }
-  | { ok: false; error: string };
+  | {
+      ok: false;
+      error: string;
+      /** `AUTH_EXPIRED`: the Google session was revoked/expired — sign in again. */
+      code?: 'AUTH_EXPIRED';
+    };

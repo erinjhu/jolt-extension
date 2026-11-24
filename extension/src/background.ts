@@ -11,6 +11,7 @@ import {
   markSessionSynced,
   syncFromDrive,
 } from './driveFetcher';
+import { AUTH_EXPIRED_MESSAGE, isAuthRevokedOrExpired } from './auth';
 import { ExtensionMessage, MessageResponse } from './types';
 
 /** Normalize any thrown value into a readable error string. */
@@ -55,7 +56,14 @@ async function handleMessage(
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
   handleMessage(message)
     .then(sendResponse)
-    .catch((err) => sendResponse({ ok: false, error: toErrorMessage(err) }));
+    .catch((err: unknown) => {
+      // Auth failures keep their own code so the popup shows "sign in again"
+      // instead of a generic (or timeout) message.
+      const response: MessageResponse = isAuthRevokedOrExpired(err)
+        ? { ok: false, error: AUTH_EXPIRED_MESSAGE, code: 'AUTH_EXPIRED' }
+        : { ok: false, error: toErrorMessage(err) };
+      sendResponse(response);
+    });
   // Returning true keeps the message channel open for the async response.
   return true;
 });

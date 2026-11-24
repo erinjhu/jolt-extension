@@ -60,6 +60,34 @@ export function isAuthCancellation(err: unknown): boolean {
   );
 }
 
+/** Shown above "Sign In with Google" when the saved session can't be used. */
+export const AUTH_EXPIRED_MESSAGE =
+  'Your Google session expired or access was revoked. Please sign in again to sync your sessions.';
+
+/**
+ * Thrown when Google no longer honours our grant: the token was revoked or
+ * expired (`OAuth2 not granted or revoked`, `invalid_grant`, HTTP 401). This
+ * is NOT a timeout or a user cancel — the fix is to sign in again.
+ */
+export class AuthRevokedOrExpiredError extends Error {
+  constructor(message: string = AUTH_EXPIRED_MESSAGE) {
+    super(message);
+    this.name = 'AuthRevokedOrExpiredError';
+  }
+}
+
+/** True for revoked/expired-credential failures (typed error or Chrome/Google text). */
+export function isAuthRevokedOrExpired(err: unknown): boolean {
+  if (err instanceof AuthRevokedOrExpiredError) return true;
+  const text = (err instanceof Error ? err.message : String(err ?? '')).toLowerCase();
+  return (
+    text.includes('oauth2 not granted or revoked') ||
+    text.includes('did not approve access') ||
+    text.includes('invalid_grant') ||
+    /\b401\b/.test(text)
+  );
+}
+
 /**
  * Turn a raw `chrome.identity` failure into a short plain-language message.
  * Covers a bad/mismatched OAuth client id, blocked sign-in and network drops.
@@ -195,10 +223,12 @@ export async function signIn(): Promise<AuthSession> {
  * Resolution order:
  *   1. A non-expired token we stored ourselves (survives SW restarts).
  *   2. A silent `getAuthToken(false)` — Chrome renews from an existing grant.
- *   3. (only as a last resort) an interactive prompt.
  *
- * This is the single entry point network code should use, so a user who has
- * signed in once is not asked to sign in again for routine actions.
+ * It NEVER goes interactive: this runs in the background worker, which cannot
+ * show Google's consent window, so an interactive attempt would just hang
+ * until the popup's timer fired. When no silent token is available the saved
+ * session is cleared and `AuthRevokedOrExpiredError` is thrown so the popup
+ * can ask the user to sign in again.
  */
 export async function getValidToken(): Promise<string> {
   const stored = await readStoredToken();
@@ -211,9 +241,28 @@ export async function getValidToken(): Promise<string> {
     await storeToken(token);
     return token;
   } catch {
-    const token = await getAuthToken(true);
-    await storeToken(token);
-    return token;
+    await clearAuthState();
+    throw new AuthRevokedOrExpiredError();
+  }
+}
+
+/**
+ * Forget a dead session: evict stale tokens from Chrome's identity cache and
+ * clear the persisted token, connected flag and email, so the popup stops
+ * showing the old account. Cached sessions are kept for when the user returns.
+ */
+export async function clearAuthState(): Promise<void> {
+  const stored = await readStoredToken();
+  try {
+    if (stored) await removeCachedToken(stored.token);
+    await clearChromeTokenCache();
+  } finally {
+    await chrome.storage.local.remove([
+      AUTH_TOKEN_KEY,
+      AUTH_TOKEN_EXPIRY_KEY,
+      AUTH_FLAG_KEY,
+      AUTH_EMAIL_KEY,
+    ]);
   }
 }
 
@@ -235,6 +284,11 @@ export async function invalidateToken(token: string): Promise<void> {
  * empty token) so the UI doesn't flip back to the sign-in screen on a
  * transient hiccup. The token is refreshed lazily when an action needs it.
  * A failed email lookup never invalidates an otherwise-valid token.
+ *
+ * Exception: a user who WAS connected and now gets `OAuth2 not granted or
+ * revoked` has lost their grant. That is not transient, so the stale state is
+ * cleared and `AuthRevokedOrExpiredError` is thrown. (A user who never signed
+ * in gets the same Chrome message and is simply reported as signed out.)
  */
 export async function getSignedInSession(): Promise<AuthSession | null> {
   try {
@@ -243,12 +297,14 @@ export async function getSignedInSession(): Promise<AuthSession | null> {
     const email = await fetchUserEmail(token);
     await rememberAuth(email);
     return { token, email };
-  } catch {
+  } catch (err) {
     const hint = await readAuthHint();
-    if (hint.connected) {
-      return { token: '', email: hint.email };
+    if (!hint.connected) return null;
+    if (isAuthRevokedOrExpired(err)) {
+      await clearAuthState();
+      throw new AuthRevokedOrExpiredError();
     }
-    return null;
+    return { token: '', email: hint.email };
   }
 }
 

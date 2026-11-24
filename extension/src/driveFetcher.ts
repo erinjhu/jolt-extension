@@ -7,7 +7,12 @@
  * host the manifest is permitted to reach.
  */
 
-import { getValidToken, invalidateToken } from './auth';
+import {
+  AuthRevokedOrExpiredError,
+  clearAuthState,
+  getValidToken,
+  invalidateToken,
+} from './auth';
 import {
   CachedSessions,
   JoltSessionPayload,
@@ -29,6 +34,12 @@ interface DriveFileListResponse {
   files?: Array<{ id: string; name: string }>;
 }
 
+/** Drive still says 401: the grant is dead. Clear it and surface a typed error. */
+async function failAsRevoked(): Promise<never> {
+  await clearAuthState();
+  throw new AuthRevokedOrExpiredError();
+}
+
 /**
  * Issue an authenticated Drive request. On a 401 the token is purged and the
  * call is retried once with a freshly minted token.
@@ -44,13 +55,17 @@ async function driveFetch(
 
   if (res.status === 401 && retryWith) {
     // The token Google rejected is stale/revoked — drop it everywhere, then
-    // retry once with a freshly resolved token.
+    // retry once with a freshly resolved (silent) token. If none exists,
+    // `retryWith` throws AuthRevokedOrExpiredError.
     await invalidateToken(token);
     const freshToken = await retryWith();
-    return fetch(`${DRIVE_API}${path}`, {
+    const retried = await fetch(`${DRIVE_API}${path}`, {
       headers: { Authorization: `Bearer ${freshToken}` },
     });
+    if (retried.status === 401) await failAsRevoked();
+    return retried;
   }
+  if (res.status === 401) await failAsRevoked();
 
   return res;
 }

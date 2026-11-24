@@ -6,9 +6,12 @@
  */
 
 import {
+  AUTH_EXPIRED_MESSAGE,
+  clearAuthState,
   describeAuthError,
   getSignedInSession,
   isAuthCancellation,
+  isAuthRevokedOrExpired,
   signIn,
   signOut,
   switchAccount,
@@ -77,16 +80,40 @@ const BACKGROUND_TIMEOUT_MS = 30_000;
  * Send a typed message to the background worker. Rejects after a timeout so a
  * worker that never answers can't leave the UI waiting forever.
  */
-function sendToBackground<T>(message: ExtensionMessage): Promise<MessageResponse<T>> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
+async function sendToBackground<T>(message: ExtensionMessage): Promise<MessageResponse<T>> {
+  let timer: number | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(
       () => reject(new Error('Google Drive took too long to respond. Please try again.')),
       BACKGROUND_TIMEOUT_MS,
     );
-    (chrome.runtime.sendMessage(message) as Promise<MessageResponse<T>>)
-      .then(resolve, reject)
-      .finally(() => clearTimeout(timer));
   });
+  try {
+    // An auth rejection settles the race first; the timer is always cleared
+    // below so it can never fire afterwards and relabel it as a timeout.
+    return await Promise.race([
+      chrome.runtime.sendMessage(message) as Promise<MessageResponse<T>>,
+      timeout,
+    ]);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+/** True when the background reported a revoked/expired Google session. */
+function isExpiredResponse<T>(res: MessageResponse<T>): boolean {
+  return !res.ok && res.code === 'AUTH_EXPIRED';
+}
+
+/**
+ * The saved Google session is dead: drop stale tokens/account state, return to
+ * the signed-out view and explain why above "Sign In with Google".
+ */
+async function expireSession(): Promise<void> {
+  await clearAuthState();
+  resetToSignedOut();
+  setStatus('', 'info');
+  setAuthError(AUTH_EXPIRED_MESSAGE);
 }
 
 /** Format a session's date/time and duration for the row subtitle. */
@@ -177,6 +204,8 @@ async function loadSessions(): Promise<void> {
     if (listRes.ok) {
       sessions = listRes.data.sessions;
       renderList();
+    } else if (isExpiredResponse(listRes)) {
+      await expireSession();
     } else {
       setStatus(listRes.error, 'err');
     }
@@ -198,6 +227,8 @@ async function onSyncFromDrive(): Promise<void> {
         sessions.length === 0 ? '' : `Fetched ${sessions.length} session(s).`,
         'ok',
       );
+    } else if (isExpiredResponse(res)) {
+      await expireSession();
     } else {
       setStatus(res.error, 'err');
     }
@@ -259,7 +290,8 @@ async function onSyncSession(session: SessionSummary): Promise<void> {
       sessionId: session.id,
     });
     if (!payloadRes.ok) {
-      setStatus(payloadRes.error, 'err');
+      if (isExpiredResponse(payloadRes)) await expireSession();
+      else setStatus(payloadRes.error, 'err');
       return;
     }
 
@@ -319,7 +351,8 @@ async function onSignIn(): Promise<void> {
   try {
     renderAuth(await signIn());
     setStatus('', 'info');
-    await loadSessions();
+    // Fresh grant: pull the session list from Drive right away.
+    await onSyncFromDrive();
   } catch (err) {
     // Closing the Google window is not an error — reset quietly.
     setStatus('', 'info');
@@ -351,7 +384,7 @@ async function onSwitchAccount(): Promise<void> {
   try {
     renderAuth(await switchAccount());
     setStatus('', 'info');
-    await loadSessions();
+    await onSyncFromDrive();
   } catch (err) {
     setStatus('', 'info');
     if (!isAuthCancellation(err)) setAuthError(describeAuthError(err));
@@ -374,7 +407,8 @@ async function initAuth(): Promise<void> {
     if (session) await loadSessions();
   } catch (err) {
     renderAuth(null);
-    if (!isAuthCancellation(err)) setAuthError(describeAuthError(err));
+    if (isAuthRevokedOrExpired(err)) setAuthError(AUTH_EXPIRED_MESSAGE);
+    else if (!isAuthCancellation(err)) setAuthError(describeAuthError(err));
   }
 }
 
