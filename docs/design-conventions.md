@@ -1,6 +1,6 @@
 # Design System & Engineering Rules
 
-Rules to ensure consistent development while using AI agent.
+Rules to ensure consistent development while using AI agents.
 
 ## Zero-backend / privacy-first
 

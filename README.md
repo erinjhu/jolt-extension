@@ -10,7 +10,7 @@
 1. After you scan a handwritten page or write in the editor, the web app saves the text to a Google Doc. 
 2. Then, it adds the session to
    `JoltSync/jolt_sessions.json` in your Google Drive.
-3. When you open the extension in the Chrome, press Sync. The extension will automatically open and fill in Jolt's **Add Manual Session** form.
+3. When you open the extension in Chrome, press Sync. The extension will automatically open and fill in Jolt's **Add Manual Session** form.
 4. The extension leaves the form open for you to review and submit.
 
 ## Tech Stack

@@ -9,9 +9,9 @@
   - `userinfo.email` / `userinfo.profile` — show your account.
 - The access token lives in memory + `localStorage` (`services/authStorage.ts`)
   so a reload restores the session; it is never sent to any server of ours.
-  - `hooks/useGoogleAuth.ts` owns `{ user, isRestoring, signIn, signOut, ... }`
+- `hooks/useGoogleAuth.ts` owns `{ user, isRestoring, signIn, signOut, ... }`
   and restores the session on mount.
-  - `hooks/useTokenRetry.ts` wraps every Drive/Docs call: it reads the live token
+- `hooks/useTokenRetry.ts` wraps every Drive/Docs call: it reads the live token
   from a ref and silently refreshes on a 401-style error, so a stale/empty
   token never reaches the network.
 - An expired stored token is dropped on load rather than refreshed, so no Google
