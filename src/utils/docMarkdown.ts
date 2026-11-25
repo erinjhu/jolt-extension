@@ -62,7 +62,8 @@ export function renderDocMarkdown(markdown: string): string {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const html: string[] = [];
   let para: string[] = [];
-  let list: string[] = [];
+  // One level of nesting: each item holds its indented sub-bullets.
+  let list: { text: string; children: string[] }[] = [];
   let listTag: 'ul' | 'ol' = 'ul';
 
   const flushPara = () => {
@@ -73,7 +74,12 @@ export function renderDocMarkdown(markdown: string): string {
   };
   const flushList = () => {
     if (!list.length) return;
-    html.push(`<${listTag}>${list.join('')}</${listTag}>`);
+    const inline = (text: string) => renderInline(escapeHtml(text));
+    const items = list.map(({ text, children }) => {
+      const sub = children.map((child) => `<li>${inline(child)}</li>`).join('');
+      return `<li>${inline(text)}${sub ? `<ul>${sub}</ul>` : ''}</li>`;
+    });
+    html.push(`<${listTag}>${items.join('')}</${listTag}>`);
     list = [];
   };
   const flushAll = () => {
@@ -129,18 +135,32 @@ export function renderDocMarkdown(markdown: string): string {
       flushPara();
       if (listTag !== 'ol') flushList();
       listTag = 'ol';
-      list.push(`<li>${renderInline(escapeHtml(ordered[1].trim()))}</li>`);
+      list.push({ text: ordered[1].trim(), children: [] });
       continue;
     }
     const bullet = /^[-*]\s+(.*)$/.exec(trimmed);
     if (bullet) {
       flushPara();
+      // An indented bullet belongs to the item above it.
+      if (list.length && /^\s{2,}/.test(raw)) {
+        list[list.length - 1].children.push(bullet[1].trim());
+        continue;
+      }
       if (listTag !== 'ul') flushList();
       listTag = 'ul';
-      list.push(`<li>${renderInline(escapeHtml(bullet[1].trim()))}</li>`);
+      list.push({ text: bullet[1].trim(), children: [] });
       continue;
     }
 
+    // An indented line under a list item is the rest of that item's sentence.
+    if (list.length && /^\s/.test(raw)) {
+      const item = list[list.length - 1];
+      if (item.children.length) item.children[item.children.length - 1] += ` ${trimmed}`;
+      else item.text += ` ${trimmed}`;
+      continue;
+    }
+
+    flushList();
     para.push(trimmed);
   }
 
