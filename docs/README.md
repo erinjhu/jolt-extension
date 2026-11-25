@@ -8,9 +8,10 @@ companion for the Jolt Chrome extension. It lets you:
 - Sync sessions straight to your own **Google Drive / Google Docs**.
 
 There is **no backend server and no external database**. The browser talks
-directly to Google; tokens and session data live only in client memory and in
-your Drive. A **Guest Demo Mode** runs the whole flow against an in-memory mock
-so visitors can try it with no Google account.
+directly to Google; the OAuth token stays in the browser (memory and
+`localStorage`) and session data goes to your Drive. A **Guest Demo Mode** runs
+the whole flow against an in-memory mock so visitors can try it with no Google
+account.
 
 ## System at a glance
 
@@ -19,7 +20,7 @@ so visitors can try it with no Google account.
                          │        Browser client         │
                          │   (React + Vite, this app)    │
                          └───────────────┬───────────────┘
-                                         │  OAuth token in memory only
+                                         │  OAuth token stays in browser
         ┌────────────────┬───────────────┼────────────────┬───────────────┐
         ▼                ▼               ▼                ▼               ▼
  Google Identity   Drive API +     Google Docs API   (no backend)   Guest Demo Mode
@@ -44,12 +45,7 @@ app itself ships as static files (GitHub Pages).
 
 ```powershell
 npm install
-npm run dev     # http://localhost:5173
+npm run dev     # http://localhost:5173/jolt-extension/
 ```
 
-Phone/camera testing over HTTPS uses a Cloudflare tunnel — see the root
-[`README.md`](../README.md).
 
----
-
-Next → [Auth & Routing](auth-and-routing.md)

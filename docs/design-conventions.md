@@ -1,14 +1,15 @@
 # Design System & Engineering Rules
 
-Preserve these when adding any feature.
+Rules to ensure consistent development while using AI agent.
 
 ## Zero-backend / privacy-first
 
 - **No server, no database.** The browser calls Google APIs directly.
 - OAuth tokens stay in client memory + `localStorage`; documents and session
   files live only in the user's own Google Drive.
-- Never add a backend, analytics, or third-party data sink. Keep the
-  `drive.file`-scoped, least-privilege posture.
+- Never add a backend, analytics, or third-party data sink.
+- Keep scopes minimal. The web app uses `drive.file` and `documents` (plus the
+  profile scopes); the extension uses `drive.readonly` and `userinfo.email`.
 
 ## Monochrome design system
 
@@ -23,15 +24,3 @@ Preserve these when adding any feature.
 - **Code files:** keep under **500 lines**. Extract hooks (`hooks/`),
   services (`services/`), or subcomponents before a file grows past that.
 - **Doc files:** keep under **100 lines** (aim 50–85) so each is scannable.
-
-## Other conventions
-
-- Effects that act "only on real change" must compare the triggering value —
-  never a "first render" boolean (StrictMode double-invokes defeat it; see the
-  [picker-bounce postmortem](editor-mode-picker-bounce-bug.md)).
-- Surface API errors **inline** in the current view; never reset the active
-  mode on a load/save failure.
-
----
-
-Prev ← [Module Map](module-map.md) · [Docs Index](README.md)

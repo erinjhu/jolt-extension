@@ -11,12 +11,20 @@ pick/create target doc ─▶ capture or upload photo ─▶ extract text ─▶
    (`DocumentSelector` + `googlePicker.ts`). New docs are created inside the
    `JoltSync` Drive folder (`driveFolderService.ts`).
 2. **Capture** — take a photo or upload an image (`PhotoUploadLanding`).
-3. **Extract** — OCR via Google Drive's server-side conversion, or local
-   Tesseract fallback (`services/transcription.ts`, `ocrService.ts`). A
-   monochrome progress bar shows "Reading note…".
-4. **Review & sync** — `SessionForm` pre-fills the text/metadata; syncing
-   writes the session to Drive (`syncSessionToDrive.ts`) and shows the
+3. **Extract** — signed-in scans use Google Drive's server-side OCR
+   (`services/transcription.ts`). The text is read from a scratch Google Doc,
+   **appended to the target doc straight away**, and the scratch doc is trashed.
+   A progress bar tracks each step. Guest Demo uses local Tesseract instead
+   (`ocrService.ts`).
+4. **Review & sync** — `SessionForm` pre-fills the title, times and word count;
+   Description stays blank because the text is already in the doc. Syncing
+   writes `jolt_sessions.json` to `JoltSync` (`syncSessionToDrive.ts`,
+   `sessionFileService.ts`) without creating a second doc, then shows the
    confirmation screen.
+
+**Known gap:** the "Run Offline Fallback OCR" button only appears when signed
+out, which the auth gate never allows on this screen. A failed Drive OCR shows
+an error with no Tesseract fallback.
 
 ## Editor Mode: new docs vs. existing docs
 
@@ -43,6 +51,10 @@ pick/create target doc ─▶ capture or upload photo ─▶ extract text ─▶
   saves never duplicate the appended block (`googleDocsService.ts`).
 - Guest mode mirrors this with `guestSetAppendedText`.
 
+Both kinds auto-save 3s after typing stops, and when you leave the editor tab.
+**Finish Session** saves once more and opens the session form
+(`SessionLoggingView`), pre-filled with the tracked duration and word count.
+
 ## Live writing metrics (`hooks/useWritingSession.ts`)
 
 Metrics track **only the editable text** (for existing docs, only the append
@@ -55,6 +67,3 @@ box — `initialWordCount` starts at 0):
 - **WPH** — Overall = words ÷ active time × 3600; Highest = peak over a rolling
   window.
 
----
-
-Prev ← [Auth & Routing](auth-and-routing.md) · Next → [Module Map](module-map.md)
