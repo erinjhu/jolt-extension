@@ -55,19 +55,14 @@ export const SAMPLE_OCR_TEXT = [
 
 /** Starting body for the pre-populated "Sample Draft" document. */
 const SAMPLE_DRAFT_TEXT = [
-  'The city never looked the same after that winter.',
-  '',
-  'She kept the ticket stub in her coat pocket for years, a small paper',
-  'proof that the night had actually happened.',
+  'I start every morning by getting slapped in the face. The first time it happened, I thought my dreams of flying like a bird came true. But then I face-planted into sweaty socks that smelled like moldy cheese. It’s not easy being an alarm clock.'
 ].join('\n');
 
 /** Starting body for the pre-populated "Project Notes" document. */
 const PROJECT_NOTES_TEXT = [
-  'Project Notes',
-  '',
-  '- Draft the opening chapter by Friday',
-  '- Interview two writers about their daily routines',
-  '- Outline the middle act (currently sagging)',
+  '- make story either present or past tense',
+  '- brainstorm ideas for ending',
+  '- rewrite the intro paragraph',
 ].join('\n');
 
 /**
