@@ -47,10 +47,7 @@ function formatDocTitle(date: Date): string {
 
 /** Sample handwritten-note text the mock OCR "extracts" in Scan Mode. */
 export const SAMPLE_OCR_TEXT = [
-  'Morning pages — ideas are finally flowing again.',
-  '',
-  'The trick is to keep the hand moving and not stop to judge the words.',
-  'Momentum beats perfection. Three pages, every day, before the inbox.',
+  'ooh also get some more YA books from the library',
 ].join('\n');
 
 /** Starting body for the pre-populated "Sample Draft" document. */
