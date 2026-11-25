@@ -3,6 +3,8 @@
 1. [Web app](https://erinjhu.github.io/jolt-extension/): Use your phone to scan handwritten pages or type. It then syncs the session to Google Docs.
 2. [Chrome extension](https://chromewebstore.google.com/detail/bjpfalhlenokkgibijegojillljinojf?utm_source=item-share-cb): When you get back to your laptop, import your phone session into Jolt.
 
+The demo videos are [here](https://drive.google.com/drive/folders/126KYwtLzQ4KGmMtUv9g5RUsnZZDVdPzL?usp=sharing).
+
 ![App screenshots](docs/screenshots.png)
 
 ## How It Works
